@@ -1,0 +1,11 @@
+bpf/vmlinux.h
+*.o
+*.skel.h
+loader/loader
+__pycache__/
+.venv/
+node_modules/
+dist/
+*.db
+*.sqlite3
+.env
