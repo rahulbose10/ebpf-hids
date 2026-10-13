@@ -16,3 +16,6 @@
 - trace_pipe showed an "exec" line for each new program started, including a burst when a new terminal opened. comm showed the parent name (bash) because the hook fires at syscall entry.
 - pwd produced no event because it is a shell builtin and does not call execve.
 - Verifier exercise: a map lookup dereferenced without a NULL check compiled fine but was rejected at load with "R0 invalid mem access 'map_value_or_null'" after 7 instructions, error -13. Adding "if (!val) return 0;" made it load (xlated 152B, jited 93B). Lesson files not committed.
+- Wrote common.h (struct event, 168 bytes, checked with clang and gcc), execve_monitor.bpf.c (ring buffer, 256KB) and loader.c (JSON lines on stdout).
+- First load failed with "libbpf: failed to find valid kernel BTF", error -3. The apt libbpf (0.5.0) could not parse the 6.8 kernel's BTF. Built libbpf v1.4.0 as a static library, linked the loader against it, and the load worked.
+- Piped loader output through jq. EXEC lines appeared for terminal shell startup and for ls. comm is cut at 15 characters. A program named /tmp/a"b came through as valid JSON with the quote escaped.
