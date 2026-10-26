@@ -33,3 +33,12 @@
 - My batched wakeup broke quiet events: ring_buffer__poll does not read on timeout, so a lone ls never showed. Added ring_buffer__consume in the loop and at exit.
 - correlate.bpf.c (off by default, --correlate): connect stamps the pid, exec checks self then parent within 10 s, exit clears it. Child and same-process cases fire, no-connect and 11 s cases don't. 2 stamps left after the test.
 - Still open: no L2 engine yet to pipe into. One OPEN with empty detail at bash startup. *at syscalls can give relative paths. RENAME paths over 59 chars get cut.
+
+## 2026-10-27 - L1 kernel sensor, session 4 (BPF-LSM prevention)
+- Enabled BPF-LSM: added bpf to the lsm= list in GRUB, rebooted. /sys/kernel/security/lsm now ends in ,bpf.
+- lsm_detect.bpf.c: lsm/ptrace_access_check reported as its own type PTRACE_CHECK, rate-limited per pid, never labelled PTRACE. ps aux and fuser triggered run_cnt=2137 permission checks in a few seconds, none a real ptrace. Standalone, not wired into the main loader.
+- enforce.bpf.c: same hook, returns -EPERM for one pid read from a userspace config map. protected_pid=0 denies nothing (fail-open), checked strace -f /bin/true still works with it loaded.
+- ips_enforce.c: separate binary, separate make ips target, plain make does not build it. Takes the pid to protect as an argument, writes config, prints BLOCK events. Ships disabled.
+- Proved prevention: sudo strace -p <sleep pid> attached fine with no IPS; with the IPS protecting that pid, sudo strace as root got "ptrace(PTRACE_SEIZE): Operation not permitted" and the IPS printed a BLOCK event. Root bypasses yama but the bpf LSM is last in the lsm= order and still denied.
+- Scope is ptrace only for now; exec blocking via bprm_check_security deferred. Separate binary, disabled default, narrow policy is the answer to "what if prevention has a bug".
+- Still open: wire PTRACE_CHECK into the main loader if wanted, exec enforcement, no L2 engine yet.
