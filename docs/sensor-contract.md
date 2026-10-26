@@ -38,3 +38,13 @@ detail can be empty when the kernel could not read the string from the process.
 Idle with Firefox open: 72 and 254 events per minute in two runs, the 254 mostly apt-check.
 Firefox renamed 8 files in about 25 ms during normal browsing. A ransomware burst threshold has to sit above that.
 Exec remaps: 514 in an idle minute before rate limiting, 21 events after.
+
+## PTRACE_CHECK and enforcement (LSM)
+
+PTRACE_CHECK comes from the lsm/ptrace_access_check hook, not the ptrace syscall. It fires whenever the kernel checks ptrace-level access, which includes anything reading /proc (ps, fuser), so it is far noisier than PTRACE and must never be merged with it. Rate-limited to 1 per pid per second.
+
+    PTRACE_CHECK  target_pid=1234 mode=0x5 suppressed=7
+
+The prevention program (ips_enforce, optional) emits its own stream, not the sensor stream:
+
+    {"ts":..,"pid":..,"comm":"strace","action":"BLOCK","detail":"BLOCKED ptrace target_pid=1234"}
