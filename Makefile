@@ -13,7 +13,7 @@ BPF_OBJS := $(BPF_SRCS:.c=.o)
 BPF_CFLAGS := -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) -I bpf -I $(LIBBPF_INC)
 CFLAGS := -O2 -Wall -I $(LIBBPF_INC)
 
-.PHONY: all clean
+.PHONY: all clean ips
 
 all: $(BPF_OBJS) loader/loader
 
@@ -28,4 +28,8 @@ loader/loader: loader/loader.c bpf/common.h
 	$(CC) $(CFLAGS) $< -o $@ $(LIBBPF_LIB) -lelf -lz
 
 clean:
-	rm -f bpf/*.bpf.o loader/loader
+	rm -f bpf/*.bpf.o loader/loader loader/ips_enforce
+
+ips: bpf/enforce.bpf.o loader/ips_enforce.c
+	@test -n "$(LIBBPF_LIB)" || { echo "libbpf.a not found under $(LIBBPF_DIR), see README"; exit 1; }
+	$(CC) $(CFLAGS) loader/ips_enforce.c -o loader/ips_enforce $(LIBBPF_LIB) -lelf -lz
