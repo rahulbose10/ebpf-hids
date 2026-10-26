@@ -16,7 +16,7 @@ int handle_execve(struct trace_event_raw_sys_enter *ctx)
 	struct task_struct *task;
 	struct event *e;
 
-	e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
+	e = RESERVE_EVENT();
 	if (!e)
 		return 0;
 
@@ -31,6 +31,6 @@ int handle_execve(struct trace_event_raw_sys_enter *ctx)
 	bpf_probe_read_user_str(&e->detail, sizeof(e->detail),
 				(const char *)ctx->args[0]);
 
-	bpf_ringbuf_submit(e, 0);
+	SUBMIT_EVENT(e);
 	return 0;
 }
