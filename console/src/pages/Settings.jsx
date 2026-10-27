@@ -1,51 +1,30 @@
-
 import { useState } from "react";
 
-const initialUsers = [
-  {
-    id: 1,
-    name: "SOC Admin",
-    email: "admin@ebpf-hids.local",
-    role: "Admin",
-  },
-  {
-    id: 2,
-    name: "SOC Analyst",
-    email: "analyst@ebpf-hids.local",
-    role: "Analyst",
-  },
-];
+// Everything on this page lives in React state. Nothing is sent to the
+// backend: the user, API key and alerting endpoints (/api/users, /api/apikeys,
+// /api/alerting) belong to L4 and are not wired yet. The page says so at the
+// top, and every action says so again in the notice line.
 
-const fieldClass =
-  "w-full min-w-0 rounded border border-line bg-[#111827] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-signal";
+const FIELD =
+  "w-full min-w-0 rounded border border-line bg-ink px-2.5 py-1.5 text-[12px] text-text outline-none [color-scheme:dark] placeholder:text-mute focus:border-signal";
 
-const buttonClass =
-  "rounded border border-signal/40 bg-signal/10 px-4 py-2 text-sm font-medium text-signal transition hover:bg-signal/20";
+const PRIMARY =
+  "rounded border border-signal/40 bg-signal/10 px-3 py-1.5 text-[12px] font-medium text-signal transition hover:bg-signal/20";
 
-const secondaryButtonClass =
-  "rounded border border-line bg-[#111827] px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800";
+const SECONDARY =
+  "rounded border border-line bg-ink px-3 py-1.5 text-[12px] text-text transition hover:border-mute";
 
-function SectionLabel({ children }) {
-  return <p className="eyebrow">{children}</p>;
-}
+const KEY_CHARS = "abcdefghijkmnopqrstuvwxyz23456789";
 
 export default function Settings() {
-  const [users, setUsers] = useState(initialUsers);
-
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [userRole, setUserRole] = useState("Analyst");
-
+  const [users, setUsers] = useState([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [createRole, setCreateRole] = useState("viewer");
+  const [role, setRole] = useState("viewer");
 
   const [apiKeys, setApiKeys] = useState([]);
-  const [newKey, setNewKey] = useState("");
 
-  const [webhookUrl, setWebhookUrl] = useState(
-    "https://hooks.example/lab"
-  );
+  const [webhookUrl, setWebhookUrl] = useState("");
   const [severity, setSeverity] = useState("high");
   const [throttle, setThrottle] = useState("60");
   const [mirrorSyslog, setMirrorSyslog] = useState(false);
@@ -53,470 +32,279 @@ export default function Settings() {
 
   const [notice, setNotice] = useState("");
 
-  function addUser(event) {
+  function createUser(event) {
     event.preventDefault();
+    const name = username.trim();
 
-    if (!userName.trim() || !userEmail.trim()) {
-      setNotice("Please enter the user's name and email.");
+    if (!name || !password) {
+      setNotice("Enter a username and a password.");
+      return;
+    }
+    if (users.some((user) => user.name === name)) {
+      setNotice("That username is already in the local list.");
       return;
     }
 
-    setUsers((current) => [
-      ...current,
-      {
-        id: Date.now(),
-        name: userName.trim(),
-        email: userEmail.trim(),
-        role: userRole,
-      },
-    ]);
-
-    setUserName("");
-    setUserEmail("");
-    setNotice("Demo user added locally. The server was not changed.");
+    setUsers((current) => [...current, { id: Date.now(), name, role }]);
+    setUsername("");
+    // The password is never kept: it is cleared as soon as the row is added.
+    setPassword("");
+    setNotice("Added to the local list only. No server account was created.");
   }
 
-  function changeRole(id, role) {
-    setUsers((current) =>
-      current.map((user) =>
-        user.id === id ? { ...user, role } : user
-      )
-    );
-
-    setNotice("Demo role updated locally.");
+  function changeRole(id, nextRole) {
+    setUsers((current) => current.map((user) => (user.id === id ? { ...user, role: nextRole } : user)));
+    setNotice("Role changed in the local list only.");
   }
 
   function deleteUser(id) {
-    setUsers((current) =>
-      current.filter((user) => user.id !== id)
-    );
-
-    setNotice("Demo user removed locally.");
+    setUsers((current) => current.filter((user) => user.id !== id));
+    setNotice("Removed from the local list only.");
   }
 
   function createApiKey() {
-    const chars = "abcdefghijkmnopqrstuvwxyz23456789";
+    const random = Array.from({ length: 24 }, () => KEY_CHARS[Math.floor(Math.random() * KEY_CHARS.length)]).join("");
+    const value = `demo_${random}`;
 
-    const randomPart = Array.from(
-      { length: 24 },
-      () => chars[Math.floor(Math.random() * chars.length)]
-    ).join("");
-
-    const key = `demo_${randomPart}`;
-    const id = Date.now();
-
-    setApiKeys((current) => [
-      ...current,
-      {
-        id,
-        name: `Demo key ${current.length + 1}`,
-        value: key,
-      },
-    ]);
-
-    setNewKey(key);
-    setNotice(
-      "Demo key created in the browser. It is not a real API key."
-    );
+    setApiKeys((current) => [...current, { id: Date.now(), name: `Demo key ${current.length + 1}`, value }]);
+    setNotice("Demo key made in the browser. It is not a real API key and the server does not know it.");
   }
 
   function revokeApiKey(id) {
-    setApiKeys((current) =>
-      current.filter((key) => key.id !== id)
-    );
-
-    setNewKey("");
-    setNotice("Demo key revoked locally.");
-  }
-
-  function createUser(event) {
-    event.preventDefault();
-
-    if (!username.trim() || !password) {
-      setNotice("Enter a username and password.");
-      return;
-    }
-
-    setNotice(
-      "User creation is a UI demo only. No server account was created."
-    );
+    setApiKeys((current) => current.filter((key) => key.id !== id));
+    setNotice("Demo key removed from the local list.");
   }
 
   function saveAlerting(event) {
     event.preventDefault();
-
     const seconds = Number(throttle);
 
     if (!Number.isFinite(seconds) || seconds < 0) {
       setNotice("Throttle must be zero or a positive number.");
       return;
     }
-
-    setNotice(
-      "Configuration validated locally. No server settings were changed."
-    );
+    setNotice("Values checked in the browser. No server setting was changed.");
   }
 
   function testAlerting() {
-    const entry = {
-      id: Date.now(),
-      time: new Date().toLocaleTimeString(),
-      status: "DEMO",
-      message: `Local test requested at ${severity} severity.`,
-    };
-
-    setDeliveries((current) => [entry, ...current]);
-
-    setNotice(
-      "Demo test recorded locally. No webhook or server alert was sent."
-    );
+    setDeliveries((current) => [
+      {
+        id: Date.now(),
+        time: new Date().toLocaleTimeString("en-GB"),
+        message: `Local test at ${severity} severity. Nothing was sent.`,
+      },
+      ...current,
+    ]);
+    setNotice("Test recorded in this page only. No webhook was called.");
   }
 
   return (
-    <main className="settings-page min-h-full space-y-5 p-4 text-text sm:p-6">
-      <style>{`
-        .settings-page input,
-        .settings-page select,
-        .settings-page textarea {
-          color-scheme: dark;
-          background-color: #111827;
-          color: #e2e8f0;
-          border-color: #334155;
-        }
+    <div>
+      <div className="page-header">
+        <div className="eyebrow">System / configuration</div>
+        <h1>Settings</h1>
+        <p>Alerting, users and API keys.</p>
+      </div>
 
-        .settings-page input::placeholder {
-          color: #64748b;
-          opacity: 1;
-        }
-
-        .settings-page select option {
-          background-color: #111827;
-          color: #e2e8f0;
-        }
-
-        .settings-page input[type="checkbox"] {
-          accent-color: #43d9c5;
-        }
-      `}</style>
-
-      <header>
-        <SectionLabel>SYSTEM / CONFIGURATION</SectionLabel>
-
-        <h1 className="mt-2 font-display text-2xl font-semibold">
-          Settings
-        </h1>
-
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-mute">
-          Alerting integrations and access control. Changes on this demo
-          page remain local and are not saved to the server.
-        </p>
-      </header>
+      <div className="mb-3 rounded border border-medium/40 bg-medium/10 px-3 py-2 font-mono text-[11px] text-medium">
+        Demo mode. Nothing on this page is saved to the server, and a reload clears it. Real management
+        needs the backend endpoints /api/alerting, /api/users and /api/apikeys.
+      </div>
 
       {notice && (
-        <div
-          className="panel border-signal/30 p-3 text-sm text-signal"
-          role="status"
-        >
+        <div role="status" className="mb-3 rounded border border-signal/30 bg-signal/5 px-3 py-2 text-[12px] text-signal">
           {notice}
         </div>
       )}
 
-      <section className="panel p-4 sm:p-5">
-        <SectionLabel>ALERTING</SectionLabel>
-
-        <div className="mt-4 grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_1fr]">
-          <form onSubmit={saveAlerting} className="space-y-4">
-            <label className="block">
-              <span className="eyebrow">
-                WEBHOOK URL (POST JSON ON ALERT)
-              </span>
-
-              <input
-                type="url"
-                value={webhookUrl}
-                onChange={(event) =>
-                  setWebhookUrl(event.target.value)
-                }
-                className={`${fieldClass} mt-2`}
-                placeholder="https://hooks.example/lab"
-              />
-            </label>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="eyebrow">MINIMUM SEVERITY</span>
-
-                <select
-                  value={severity}
-                  onChange={(event) =>
-                    setSeverity(event.target.value)
-                  }
-                  className={`${fieldClass} mt-2`}
-                >
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
-                  <option value="critical">critical</option>
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="eyebrow">
-                  THROTTLE (SECONDS/RULE)
-                </span>
-
+      <div className="grid gap-3 xl:grid-cols-2">
+        <div className="panel self-start">
+          <div className="panel-label">Alerting</div>
+          <div className="panel-body">
+            <form onSubmit={saveAlerting} className="grid gap-3">
+              <label className="grid gap-1">
+                <span className="eyebrow">Webhook URL (POST JSON on alert)</span>
                 <input
-                  type="number"
-                  min="0"
-                  value={throttle}
-                  onChange={(event) =>
-                    setThrottle(event.target.value)
-                  }
-                  className={`${fieldClass} mt-2`}
+                  type="url"
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  className={FIELD}
+                  placeholder="https://hooks.example/lab"
                 />
               </label>
-            </div>
 
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-mute">
-              <input
-                type="checkbox"
-                checked={mirrorSyslog}
-                onChange={(event) =>
-                  setMirrorSyslog(event.target.checked)
-                }
-                className="h-4 w-4"
-              />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="grid gap-1">
+                  <span className="eyebrow">Minimum severity</span>
+                  <select value={severity} onChange={(e) => setSeverity(e.target.value)} className={FIELD}>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="critical">critical</option>
+                  </select>
+                </label>
 
-              mirror alerts to local syslog (/dev/log)
-            </label>
-
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button type="submit" className={buttonClass}>
-                Save config
-              </button>
-
-              <button
-                type="button"
-                onClick={testAlerting}
-                className={secondaryButtonClass}
-              >
-                Send test alert
-              </button>
-            </div>
-          </form>
-
-          <div className="overflow-hidden rounded-md border border-line">
-            <div className="border-b border-line px-3 py-3">
-              <SectionLabel>
-                RECENT DELIVERIES · {deliveries.length}
-              </SectionLabel>
-            </div>
-
-            {deliveries.length === 0 ? (
-              <div className="flex min-h-36 items-center justify-center p-5 text-center">
-                <p className="text-xs leading-5 text-mute">
-                  No deliveries yet. Alerts above the severity floor
-                  will appear here.
-                </p>
-              </div>
-            ) : (
-              <div>
-                {deliveries.map((delivery) => (
-                  <div
-                    key={delivery.id}
-                    className="border-b border-line p-3 last:border-b-0"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs text-signal">
-                        {delivery.status}
-                      </span>
-
-                      <span className="font-mono text-xs text-mute">
-                        {delivery.time}
-                      </span>
-                    </div>
-
-                    <p className="mt-2 text-sm">
-                      {delivery.message}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="panel p-4 sm:p-5">
-        <SectionLabel>USERS &amp; ROLES</SectionLabel>
-
-        <form
-          onSubmit={createUser}
-          className="mt-4 grid grid-cols-1 items-end gap-3 lg:grid-cols-[1fr_1fr_120px_auto]"
-        >
-          <label className="block">
-            <span className="eyebrow">USERNAME</span>
-
-            <input
-              value={username}
-              onChange={(event) =>
-                setUsername(event.target.value)
-              }
-              className={`${fieldClass} mt-2`}
-              autoComplete="off"
-            />
-          </label>
-
-          <label className="block">
-            <span className="eyebrow">PASSWORD</span>
-
-            <input
-              type="password"
-              value={password}
-              onChange={(event) =>
-                setPassword(event.target.value)
-              }
-              className={`${fieldClass} mt-2`}
-              autoComplete="new-password"
-            />
-          </label>
-
-          <label className="block">
-            <span className="eyebrow">ROLE</span>
-
-            <select
-              value={createRole}
-              onChange={(event) =>
-                setCreateRole(event.target.value)
-              }
-              className={`${fieldClass} mt-2`}
-            >
-              <option value="viewer">viewer</option>
-              <option value="analyst">analyst</option>
-              <option value="admin">admin</option>
-            </select>
-          </label>
-
-          <button type="submit" className={buttonClass}>
-            Create
-          </button>
-        </form>
-
-        <div className="mt-4 overflow-x-auto rounded-md border border-line">
-          <div className="grid min-w-[540px] grid-cols-[1fr_100px_100px_24px] gap-3 border-b border-line px-3 py-3">
-            <SectionLabel>USERNAME</SectionLabel>
-            <SectionLabel>ROLE</SectionLabel>
-            <SectionLabel>CREATED</SectionLabel>
-            <span />
-          </div>
-
-          {users.map((user) => (
-            <div
-              key={user.id}
-              className="grid min-w-[540px] grid-cols-[1fr_100px_100px_24px] items-center gap-3 border-b border-line px-3 py-3 last:border-b-0"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm">{user.name}</p>
-
-                <p className="mt-1 truncate text-xs text-mute">
-                  {user.email}
-                </p>
+                <label className="grid gap-1">
+                  <span className="eyebrow">Throttle (s per rule)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={throttle}
+                    onChange={(e) => setThrottle(e.target.value)}
+                    className={FIELD}
+                  />
+                </label>
               </div>
 
-              <select
-                value={user.role}
-                onChange={(event) =>
-                  changeRole(user.id, event.target.value)
-                }
-                className="w-full rounded border border-line bg-[#111827] px-2 py-1.5 text-xs text-slate-200"
-                aria-label={`Role for ${user.name}`}
-              >
-                <option value="Admin">admin</option>
-                <option value="Analyst">analyst</option>
-                <option value="Viewer">viewer</option>
-              </select>
+              <label className="flex cursor-pointer items-center gap-2 text-[12px] text-mute">
+                <input
+                  type="checkbox"
+                  checked={mirrorSyslog}
+                  onChange={(e) => setMirrorSyslog(e.target.checked)}
+                  className="h-4 w-4 accent-signal"
+                />
+                mirror alerts to local syslog (/dev/log)
+              </label>
 
-              <span className="text-xs text-mute">demo</span>
-
-              <button
-                type="button"
-                onClick={() => deleteUser(user.id)}
-                className="text-sm text-mute transition hover:text-red-400"
-                aria-label={`Delete ${user.name}`}
-                title="Delete user"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel p-4 sm:p-5">
-        <SectionLabel>API KEYS</SectionLabel>
-
-        <h2 className="mt-2 text-base font-semibold">
-          API Keys
-        </h2>
-
-        <p className="mt-2 text-sm text-mute">
-          Demo keys are generated in the browser only. Do not use
-          them for authentication.
-        </p>
-
-        <button
-          type="button"
-          onClick={createApiKey}
-          className={`${buttonClass} mt-4`}
-        >
-          Create demo key
-        </button>
-
-        {newKey && (
-          <div className="mt-4 rounded border border-yellow-400/30 bg-yellow-400/5 p-3">
-            <p className="eyebrow text-yellow-300">
-              DEMO KEY · SHOWN FOR THIS SESSION
-            </p>
-
-            <code className="mt-2 block break-all text-sm text-slate-200">
-              {newKey}
-            </code>
-          </div>
-        )}
-
-        {apiKeys.length > 0 && (
-          <div className="mt-4 space-y-2">
-            {apiKeys.map((key) => (
-              <div
-                key={key.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded border border-line p-3"
-              >
-                <div>
-                  <p className="text-sm">{key.name}</p>
-
-                  <p className="mt-1 text-xs text-mute">
-                    Browser-only demo key
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => revokeApiKey(key.id)}
-                  className="rounded border border-red-500/30 px-3 py-2 text-sm text-red-400 transition hover:bg-red-500/10"
-                >
-                  Revoke
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" className={PRIMARY}>
+                  Save config
+                </button>
+                <button type="button" onClick={testAlerting} className={SECONDARY}>
+                  Send test alert
                 </button>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            </form>
 
-      <p className="text-xs leading-5 text-mute">
-        DEMO MODE: user, API key and alerting changes are stored in
-        React state only. Refreshing the page resets them. Real
-        management requires supported backend API endpoints.
-      </p>
-    </main>
+            <div className="mt-4 rounded border border-line">
+              <div className="eyebrow border-b border-line px-3 py-2">Recent deliveries {deliveries.length}</div>
+              {deliveries.length === 0 ? (
+                <p className="px-3 py-3 font-mono text-[11px] text-mute">No deliveries.</p>
+              ) : (
+                deliveries.map((delivery) => (
+                  <div key={delivery.id} className="border-b border-line/60 px-3 py-2 last:border-0">
+                    <div className="flex justify-between font-mono text-[10px] text-mute">
+                      <span className="text-medium">LOCAL TEST</span>
+                      <span>browser time {delivery.time}</span>
+                    </div>
+                    <p className="mt-0.5 text-[12px]">{delivery.message}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid content-start gap-3">
+          <div className="panel">
+            <div className="panel-label">Users and roles</div>
+            <div className="panel-body">
+              <form onSubmit={createUser} className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_100px_auto]">
+                <label className="grid gap-1">
+                  <span className="eyebrow">Username</span>
+                  <input value={username} onChange={(e) => setUsername(e.target.value)} className={FIELD} autoComplete="off" />
+                </label>
+                <label className="grid gap-1">
+                  <span className="eyebrow">Password</span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={FIELD}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="eyebrow">Role</span>
+                  <select value={role} onChange={(e) => setRole(e.target.value)} className={FIELD}>
+                    <option value="viewer">viewer</option>
+                    <option value="analyst">analyst</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </label>
+                <button type="submit" className={PRIMARY}>
+                  Add
+                </button>
+              </form>
+
+              <div className="mt-3 rounded border border-line">
+                <div className="grid grid-cols-[1fr_110px_24px] gap-3 border-b border-line px-3 py-2">
+                  <span className="eyebrow">Username</span>
+                  <span className="eyebrow">Role</span>
+                  <span />
+                </div>
+
+                {users.length === 0 ? (
+                  <p className="px-3 py-3 font-mono text-[11px] text-mute">
+                    No users loaded. /api/users is not connected.
+                  </p>
+                ) : (
+                  users.map((user) => (
+                    <div
+                      key={user.id}
+                      className="grid grid-cols-[1fr_110px_24px] items-center gap-3 border-b border-line/60 px-3 py-1.5 last:border-0"
+                    >
+                      <span className="truncate font-mono text-[12px]">{user.name}</span>
+                      <select
+                        value={user.role}
+                        onChange={(e) => changeRole(user.id, e.target.value)}
+                        className={FIELD}
+                        aria-label={`Role for ${user.name}`}
+                      >
+                        <option value="admin">admin</option>
+                        <option value="analyst">analyst</option>
+                        <option value="viewer">viewer</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => deleteUser(user.id)}
+                        className="text-[14px] text-mute transition hover:text-critical"
+                        aria-label={`Delete ${user.name}`}
+                        title="Delete user"
+                      >
+                        x
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-label">API keys</div>
+            <div className="panel-body">
+              <p className="mb-3 text-[12px] leading-snug text-mute">
+                Demo keys are generated in the browser only. Do not use them for authentication.
+              </p>
+
+              <button type="button" onClick={createApiKey} className={PRIMARY}>
+                Create demo key
+              </button>
+
+              {apiKeys.length > 0 && (
+                <div className="mt-3 grid gap-2">
+                  {apiKeys.map((key) => (
+                    <div key={key.id} className="flex items-center justify-between gap-3 rounded border border-line px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-[12px]">{key.name}</p>
+                        <code className="block break-all font-mono text-[11px] text-mute">{key.value}</code>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => revokeApiKey(key.id)}
+                        className="shrink-0 rounded border border-critical/30 px-2 py-1 text-[11px] text-critical transition hover:bg-critical/10"
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
