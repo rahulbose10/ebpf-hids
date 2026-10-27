@@ -1,0 +1,21 @@
+rules:
+  - id: code_injection_rwx
+    technique: T1055
+    severity: high
+    description: "Process requested executable memory permission via mprotect (possible code injection/shellcode execution)"
+    where:
+      - field: evt.type
+        op: eq
+        value: MPROTECT
+      - field: proc.mprotect_exec_count
+        op: gte
+        value: 1
+
+  - id: kernel_module_load
+    technique: T1547
+    severity: critical
+    description: "A kernel module was loaded (possible rootkit - can blind or disable all user-space security tools)"
+    where:
+      - field: evt.type
+        op: eq
+        value: MODULE

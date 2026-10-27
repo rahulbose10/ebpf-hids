@@ -1,0 +1,60 @@
+rules:
+  - id: connect_after_exec
+    technique: T1071
+    severity: medium
+    description: "Process connected to network shortly after starting (possible C2 callback)"
+    where:
+      - field: evt.type
+        op: eq
+        value: CONNECT
+      - field: proc.connect_count
+        op: gte
+        value: 1
+      - field: since.exec
+        op: lte
+        value: 3.0
+
+  - id: network_parent_shell
+    technique: T1059
+    severity: high
+    description: "A network-connected parent spawned a shell (possible remote exploitation)"
+    where:
+      - field: parent.connect_count
+        op: gte
+        value: 1
+      - field: proc.comm
+        op: in_set
+        value: ["sh", "bash", "zsh"]
+
+  - id: ptrace_then_exec
+    technique: T1055
+    severity: high
+    description: "Process used ptrace and then executed shortly after (possible process injection)"
+    where:
+      - field: evt.type
+        op: eq
+        value: EXEC
+      - field: proc.ptrace_count
+        op: gte
+        value: 1
+      - field: since.ptrace
+        op: lte
+        value: 3.0
+
+  - id: suid_shell
+    technique: T1548
+    severity: critical
+    description: "Process escalated privileges via setuid and then spawned a shell (possible privilege escalation abuse)"
+    where:
+      - field: evt.type
+        op: eq
+        value: EXEC
+      - field: proc.setuid_count
+        op: gte
+        value: 1
+      - field: since.setuid
+        op: lte
+        value: 3.0
+      - field: evt.comm
+        op: in_set
+        value: ["sh", "bash", "zsh"]

@@ -1,0 +1,30 @@
+rules:
+  - id: backdoor_listener
+    technique: T1071
+    severity: critical
+    description: "A shell process opened a network listener (possible bind-shell backdoor)"
+    where:
+      - field: evt.type
+        op: eq
+        value: BIND
+      - field: evt.comm
+        op: in_set
+        value: ["sh", "bash", "zsh"]
+
+  - id: download_and_execute
+    technique: T1059
+    severity: high
+    description: "Process connected to the network and then executed a file from a typical drop location (possible download-and-execute)"
+    where:
+      - field: evt.type
+        op: eq
+        value: EXEC
+      - field: proc.connect_count
+        op: gte
+        value: 1
+      - field: since.connect
+        op: lte
+        value: 5.0
+      - field: evt.detail
+        op: matches
+        value: "^/tmp/"

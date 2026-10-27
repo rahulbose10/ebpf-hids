@@ -1,0 +1,72 @@
+rules:
+  - id: ransomware_burst
+    technique: T1486
+    severity: critical
+    description: "Burst of file deletion/rename activity in a short window (possible ransomware)"
+    where:
+      - field: evt.type
+        op: in_set
+        value: ["UNLINK", "RENAME"]
+      - field: proc.destruction_burst
+        op: gte
+        value: 8
+
+  - id: log_tampering
+    technique: T1070
+    severity: high
+    description: "Write or delete under /var/log (possible evidence tampering)"
+    where:
+      - field: evt.type
+        op: in_set
+        value: ["OPEN", "UNLINK"]
+      - field: evt.detail
+        op: matches
+        value: "^/var/log/"
+
+  - id: persistence_autostart
+    technique: T1547
+    severity: high
+    description: "Write to a cron/systemd/rc.local autostart path (possible persistence)"
+    where:
+      - field: evt.type
+        op: eq
+        value: OPEN
+      - field: evt.detail
+        op: matches
+        value: "(cron|systemd|rc\\.local|init\\.d)"
+
+  - id: credential_access
+    technique: T1003
+    severity: critical
+    description: "Access to a credential file such as /etc/shadow or an SSH private key"
+    where:
+      - field: evt.type
+        op: eq
+        value: OPEN
+      - field: evt.detail
+        op: matches
+        value: "(shadow|passwd|gshadow|id_rsa)"
+
+  - id: suid_backdoor
+    technique: T1548
+    severity: critical
+    description: "chmod set the setuid or setgid bit (possible backdoor for privilege escalation)"
+    where:
+      - field: evt.type
+        op: eq
+        value: CHMOD
+      - field: evt.detail
+        op: matches
+        value: "mode=[46][0-9]{3}"
+
+  - id: world_writable_sensitive
+    technique: T1222
+    severity: high
+    description: "chmod made a sensitive /etc file world-writable"
+    where:
+      - field: evt.type
+        op: eq
+        value: CHMOD
+      - field: evt.detail
+        op: matches
+        value: "^/etc/\\S+ mode=\\d{3}[2367]$"
