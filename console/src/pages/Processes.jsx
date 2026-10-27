@@ -62,7 +62,7 @@ function Processes() {
   const { data, error } = usePoll(api.processes, 5000);
   const [filter, setFilter] = useState("");
 
-  const all = data?.processes || [];
+  const all = useMemo(() => data?.processes || [], [data]);
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
