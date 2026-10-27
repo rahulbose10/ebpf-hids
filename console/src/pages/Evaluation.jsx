@@ -23,6 +23,32 @@ function Bar({ label, count, max, bar }) {
   );
 }
 
+// Share of the returned scores that the model flagged. Both numbers come from
+// the same list, so the share can never pass 100%. anomaly_count from the API
+// is a separate figure and is shown as text, not used for the ring.
+function FlagRing({ flagged, total }) {
+  const percent = total > 0 ? (flagged / total) * 100 : 0;
+
+  return (
+    <div
+      className="relative flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-full"
+      style={{
+        background: `conic-gradient(#7c8cf8 ${percent}%, #243149 ${percent}% 100%)`,
+        filter: flagged > 0 ? "drop-shadow(0 0 8px rgba(124,140,248,0.45))" : "none",
+      }}
+      role="img"
+      aria-label={`${flagged} of ${total} recent scores flagged`}
+    >
+      <div className="flex h-[64px] w-[64px] flex-col items-center justify-center rounded-full bg-ink-800">
+        <span className="font-mono text-[15px] font-semibold text-ml">
+          {total > 0 ? `${flagged}/${total}` : "-"}
+        </span>
+        <span className="mt-0.5 font-mono text-[8px] uppercase tracking-wider text-mute">flagged</span>
+      </div>
+    </div>
+  );
+}
+
 function formatNumber(value) {
   return typeof value === "number" && Number.isFinite(value) ? value.toFixed(4) : "-";
 }
@@ -76,6 +102,7 @@ export default function Evaluation() {
   const alerts = useMemo(() => alertsPoll.data?.alerts ?? [], [alertsPoll.data]);
   const scores = useMemo(() => anomaly?.scores ?? [], [anomaly]);
   const alertsLoaded = Boolean(alertsPoll.data);
+  const flaggedScores = scores.filter((row) => row.is_anomaly).length;
 
   const { ruleCount, mlCount, techniques } = useMemo(() => {
     const byTechnique = new Map();
@@ -183,8 +210,13 @@ export default function Evaluation() {
               </div>
             </div>
 
-            <div className="mt-3 font-mono text-[11px] text-mute">
-              mode {health?.ml_mode ?? "-"} / flagged {show(anomaly?.anomaly_count)}
+            <div className="mt-3 flex items-center gap-3">
+              <FlagRing flagged={flaggedScores} total={scores.length} />
+              <div className="font-mono text-[11px] leading-relaxed text-mute">
+                <div>of the last {scores.length} scores</div>
+                <div>mode {health?.ml_mode ?? "-"}</div>
+                <div>API total flagged {show(anomaly?.anomaly_count)}</div>
+              </div>
             </div>
             {mlZeroNote && <p className="mt-2 text-[11px] leading-snug text-medium">{mlZeroNote}</p>}
           </div>

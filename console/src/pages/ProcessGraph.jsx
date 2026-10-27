@@ -145,11 +145,23 @@ function ProcessNode({ node, position, severity, selected, onSelect }) {
         <circle r="24" fill="none" stroke="#ff5d5d" strokeWidth="1.2" strokeDasharray="3 3" />
       )}
 
+      {severity && (
+        <circle
+          r="23"
+          fill="none"
+          stroke={ring}
+          strokeWidth="5"
+          opacity="0.16"
+          style={{ filter: `drop-shadow(0 0 8px ${ring})` }}
+        />
+      )}
+
       <circle
         r="18"
         fill="#111a2b"
         stroke={selected ? "#e6edf6" : ring}
         strokeWidth={selected ? 2.2 : severity ? 1.8 : 1.1}
+        style={severity ? { filter: `drop-shadow(0 0 6px ${ring})` } : undefined}
       />
 
       <text
