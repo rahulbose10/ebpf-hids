@@ -2,45 +2,47 @@ import "../styles/sidebar.css";
 
 function Sidebar({ nav, active, setActive, onLogout }) {
   return (
-    <div className="sidebar">
-
-      <div className="logo">
-        <h3>🛡 eBPF-HIDS</h3>
-        <p>HOST INTRUSION SENSOR</p>
+    <aside className="side">
+      <div className="side-brand">
+        <div className="side-name">eBPF-HIDS</div>
+        <div className="side-tag">Host intrusion sensor</div>
       </div>
 
-      <nav className="menu sidebar-nav">
+      <nav className="side-nav">
+        {nav.map((item) => {
+          const isActive = active === item.id;
+          const tone = item.ml ? "ml" : "signal";
 
-        {nav.map((item) => (
-          <button
-            key={item.id}
-            className={`menu-item ${active === item.id ? "active" : ""}`}
-            onClick={() => setActive(item.id)}
-          >
-            <span className="menu-icon">
-              {item.glyph}
-            </span>
-
-            <span className="menu-label">
-              {item.label}
-            </span>
-          </button>
-        ))}
-
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`side-item ${isActive ? `active ${tone}` : ""}`}
+              onClick={() => setActive(item.id)}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <span className="side-glyph" aria-hidden="true">
+                {item.glyph}
+              </span>
+              <span className="side-label">{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
-      <div className="sidebar-footer">
-
+      <div className="side-foot">
         <button
-          className="logout-btn"
+          type="button"
+          className="side-item side-logout"
           onClick={onLogout}
         >
-          ⏻ Logout
+          <span className="side-glyph" aria-hidden="true">
+            ⏻
+          </span>
+          <span className="side-label">Log out</span>
         </button>
-
       </div>
-
-    </div>
+    </aside>
   );
 }
 

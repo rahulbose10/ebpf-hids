@@ -1,157 +1,115 @@
-.sidebar {
-  width: 250px;
-  height: 100vh;
-
-  background: var(--bg-surface);
-  color: var(--text-main);
-
-  padding: 25px;
-
-  display: flex;
-  flex-direction: column;
+.side{
+  position:sticky;
+  top:0;
+  width:208px;
+  height:100vh;
+  flex-shrink:0;
+  display:flex;
+  flex-direction:column;
+  padding:18px 12px 14px;
+  background:theme('colors.ink-800');
+  border-right:1px solid theme('colors.line');
+  overflow-y:auto;
+  z-index:20;
 }
 
-/* =========================
-   LOGO
-========================= */
-
-.logo {
-  padding: 24px 20px;
-  border-bottom: 1px solid var(--border-color);
-  text-align: center;
+.side-brand{
+  padding:4px 10px 20px;
+  white-space:nowrap;
 }
 
-.logo h3 {
-  margin: 0;
-  color: var(--text-main);
-  font-size: 30px;
-  font-weight: 700;
+.side-name{
+  font-family:"Space Grotesk",sans-serif;
+  font-weight:700;
+  font-size:16px;
+  letter-spacing:-0.01em;
+  color:theme('colors.text');
 }
 
-.logo p {
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  letter-spacing: 4px;
-  text-transform: uppercase;
+.side-tag{
+  margin-top:4px;
+  font-family:"JetBrains Mono",monospace;
+  font-size:9.5px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:theme('colors.mute');
 }
 
-/* =========================
-   MENU
-========================= */
-
-.menu {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-color);
+.side-nav{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  margin-bottom:16px;
 }
 
-.sidebar-nav {
-  flex: 1;
-
-  display: flex;
-  flex-direction: column;
-
-  gap: 10px;
+.side-item{
+  width:100%;
+  height:34px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:0 10px;
+  border:1px solid transparent;
+  border-radius:6px;
+  background:transparent;
+  color:theme('colors.mute');
+  font-family:"Inter",sans-serif;
+  font-size:13px;
+  font-weight:500;
+  text-align:left;
+  white-space:nowrap;
+  cursor:pointer;
+  transition:color .15s ease, background .15s ease, border-color .15s ease;
 }
 
-/* =========================
-   MENU ITEM
-========================= */
-
-.menu-item {
-  width: 100%;
-  min-height: 52px;
-
-  padding: 0 15px;
-  margin: 0;
-
-  border: none;
-  border-radius: 10px;
-
-  background: transparent;
-  color: var(--text-main);
-
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-
-  gap: 10px;
-
-  font-size: 16px;
-  font-weight: 500;
-
-  cursor: pointer;
-
-  transition: 0.25s ease;
+.side-glyph{
+  width:16px;
+  flex-shrink:0;
+  text-align:center;
+  font-size:12px;
+  line-height:1;
 }
 
-.menu-item:hover {
-  background: var(--border-color);
+.side-item:hover{
+  color:theme('colors.text');
+  background:theme('colors.ink-700');
 }
 
-.menu-item.active {
-  background: #2563eb;
-  color: #ffffff;
+.side-item.active{
+  color:theme('colors.text');
 }
 
-/* Icon */
-
-.menu-icon {
-  width: 20px;
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  flex-shrink: 0;
-
-  font-size: 16px;
+.side-item.active.signal{
+  background:theme('colors.signal / 8%');
+  border-color:theme('colors.signal / 25%');
 }
 
-/* Text */
-
-.menu-label {
-  display: inline-block;
+.side-item.active.signal .side-glyph{
+  color:theme('colors.signal');
 }
 
-/* =========================
-   SIDEBAR FOOTER
-========================= */
-
-.sidebar-footer {
-  margin-top: auto;
-  padding: 20px 0 0;
+.side-item.active.ml{
+  background:theme('colors.ml / 8%');
+  border-color:theme('colors.ml / 25%');
 }
 
-/* =========================
-   LOGOUT
-========================= */
-
-.logout-btn {
-  width: 100%;
-  min-height: 48px;
-
-  padding: 12px 15px;
-
-  border: none;
-  border-radius: 10px;
-
-  background: #dc2626;
-  color: #ffffff;
-
-  font-size: 15px;
-  font-weight: 600;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  cursor: pointer;
-
-  transition: 0.25s ease;
+.side-item.active.ml .side-glyph{
+  color:theme('colors.ml');
 }
 
-.logout-btn:hover {
-  background: #b91c1c;
+.side-foot{
+  margin-top:auto;
+  padding-top:12px;
+  border-top:1px solid theme('colors.line');
+}
+
+.side-logout:hover{
+  color:theme('colors.critical');
+  background:theme('colors.critical / 10%');
+}
+
+@media (prefers-reduced-motion: reduce){
+  .side-item{
+    transition:none;
+  }
 }

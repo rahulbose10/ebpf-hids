@@ -22,7 +22,7 @@ function Processes() {
       setProcesses(data.processes || []);
     } catch (err) {
       console.error("Failed to load processes:", err);
-      setError("Process data load করা যাচ্ছে না.");
+      setError("Could not load process data from /api/processes.");
     } finally {
       setLoading(false);
     }
