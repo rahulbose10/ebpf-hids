@@ -1,134 +1,397 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { usePoll } from "../api";
 
 // Same-origin path. Vite proxies /api to the backend in dev, so no host or
 // port is hardcoded and the page also works when served from another machine.
 const API_BASE = "/api";
 
-const FALLBACK_RULES = [
+// A copy of L2's rule files (server/rules/*.yml on main at 1f3506c), generated
+// by reading the YAML, not typed by hand. It does two jobs: it supplies the
+// "on" and "where" lines on each card, because the /api/rules contract has no
+// condition field, and it is the fallback list when /api/rules does not answer.
+// If L2 changes a rule file, regenerate this copy, or the card shows an old
+// condition.
+const RULES_SOURCE = "server/rules/*.yml @ main 1f3506c";
+
+const RULE_SNAPSHOT = [
   {
-    id: "network_parent_shell",
-    technique: "T1059",
-    severity: "high",
-    enabled: true,
-    description: "A network-facing parent process launched a shell.",
-    hits: 0,
+    "id": "connect_after_exec",
+    "technique": "T1071",
+    "severity": "medium",
+    "description": "Outbound connection within 3 s of the program starting (possible C2 callback)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "CONNECT"
+      },
+      {
+        "field": "evt.detail",
+        "op": "not_matches",
+        "value": ":53$"
+      },
+      {
+        "field": "since.exec",
+        "op": "lte",
+        "value": 3.0
+      },
+      {
+        "field": "proc.exe",
+        "op": "not_matches",
+        "value": "^(/usr)?/s?bin/(curl|wget|ping|ping6|git|ssh|scp|sftp|rsync|apt|apt-get|snap|dig|host|nslookup)$|^/usr/lib/(apt/methods|git-core)/|^/snap/|^/usr/lib/snapd/|^/usr/lib/(thunderbird|firefox)/"
+      }
+    ]
   },
   {
-    id: "ptrace_then_exec",
-    technique: "T1055",
-    severity: "critical",
-    enabled: true,
-    description: "A process used ptrace activity followed by execution.",
-    hits: 0,
+    "id": "network_parent_shell",
+    "technique": "T1059",
+    "severity": "high",
+    "description": "A process that made a network connection started a shell (possible reverse shell)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "EXEC"
+      },
+      {
+        "field": "proc.exe_name",
+        "op": "in_set",
+        "value": [
+          "sh",
+          "bash",
+          "dash",
+          "zsh",
+          "ksh",
+          "fish",
+          "busybox"
+        ]
+      },
+      {
+        "field": "parent.net_connect_count",
+        "op": "gte",
+        "value": 1
+      }
+    ]
   },
   {
-    id: "suid_shell",
-    technique: "T1548",
-    severity: "high",
-    enabled: true,
-    description: "A process requested uid 0 and then launched a shell.",
-    hits: 0,
+    "id": "ptrace_then_exec",
+    "technique": "T1055",
+    "severity": "critical",
+    "description": "ptrace attach followed by an exec within 3 s (possible process injection)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "EXEC"
+      },
+      {
+        "field": "proc.ptrace_count",
+        "op": "gte",
+        "value": 1
+      },
+      {
+        "field": "since.ptrace",
+        "op": "lte",
+        "value": 3.0
+      }
+    ]
   },
   {
-    id: "connect_after_exec",
-    technique: "T1071",
-    severity: "medium",
-    enabled: true,
-    description: "Beaconing — outbound connect shortly after exec.",
-    hits: 0,
+    "id": "suid_shell",
+    "technique": "T1548",
+    "severity": "high",
+    "description": "Process went from a normal uid to root and started a shell within 3 s (possible privilege escalation)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "EXEC"
+      },
+      {
+        "field": "proc.root_gain_count",
+        "op": "gte",
+        "value": 1
+      },
+      {
+        "field": "since.setuid",
+        "op": "lte",
+        "value": 3.0
+      },
+      {
+        "field": "proc.exe_name",
+        "op": "in_set",
+        "value": [
+          "sh",
+          "bash",
+          "dash",
+          "zsh",
+          "ksh",
+          "fish",
+          "busybox"
+        ]
+      }
+    ]
   },
   {
-    id: "ransomware_burst",
-    technique: "T1486",
-    severity: "critical",
-    enabled: true,
-    description: "Rapid file destruction, possible ransomware activity.",
-    hits: 0,
+    "id": "ransomware_burst",
+    "technique": "T1486",
+    "severity": "critical",
+    "description": "25 or more deletes/renames inside 5 s outside package and app cache folders (possible ransomware)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "in_set",
+        "value": [
+          "UNLINK",
+          "RENAME"
+        ]
+      },
+      {
+        "field": "proc.destruction_burst",
+        "op": "gte",
+        "value": 25
+      }
+    ]
   },
   {
-    id: "log_tampering",
-    technique: "T1070",
-    severity: "high",
-    enabled: true,
-    description: "Activity consistent with indicator removal or log tampering.",
-    hits: 0,
+    "id": "log_tampering",
+    "technique": "T1070",
+    "severity": "high",
+    "description": "Write or delete under /var/log by something that is not a log daemon or package tool",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "in_set",
+        "value": [
+          "OPEN",
+          "UNLINK"
+        ]
+      },
+      {
+        "field": "evt.detail",
+        "op": "matches",
+        "value": "^/var/log/"
+      },
+      {
+        "field": "proc.exe_name",
+        "op": "not_in_set",
+        "value": [
+          "rsyslogd",
+          "rs:main Q:Reg",
+          "in:imuxsock",
+          "in:imklog",
+          "in:imjournal",
+          "systemd-journald",
+          "systemd-journal",
+          "logrotate",
+          "apt",
+          "apt-get",
+          "dpkg",
+          "unattended-upgrade",
+          "unattended-upgr",
+          "update-alternatives",
+          "update-alternat",
+          "Xorg",
+          "cupsd"
+        ]
+      }
+    ]
   },
   {
-    id: "persistence_autostart",
-    technique: "T1547",
-    severity: "high",
-    enabled: true,
-    description: "Write to an autostart or persistence location.",
-    hits: 0,
+    "id": "persistence_autostart",
+    "technique": "T1547",
+    "severity": "high",
+    "description": "Write to a cron, systemd unit, rc.local, init.d or XDG autostart location",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "in_set",
+        "value": [
+          "OPEN",
+          "RENAME"
+        ]
+      },
+      {
+        "field": "evt.detail",
+        "op": "matches",
+        "value": "(^|-> )(/etc/(cron\\.(d|daily|hourly|weekly|monthly)/|crontab$|anacrontab$|rc\\.local$|init\\.d/|systemd/(system|user)/|xdg/autostart/)|/var/spool/cron/|/(usr/)?lib/systemd/(system|user)/|/(root|home/[^/]+)/\\.config/(systemd/user|autostart)/)"
+      },
+      {
+        "field": "proc.exe_name",
+        "op": "not_in_set",
+        "value": [
+          "dpkg",
+          "apt",
+          "apt-get",
+          "unattended-upgrade",
+          "unattended-upgr",
+          "systemd"
+        ]
+      }
+    ]
   },
   {
-    id: "credential_access",
-    technique: "T1003",
-    severity: "high",
-    enabled: true,
-    description: "Access to a credential store.",
-    hits: 0,
+    "id": "credential_access",
+    "technique": "T1003",
+    "severity": "high",
+    "description": "Write-intent open of /etc/shadow, /etc/gshadow or an SSH private key (reads are not visible to the sensor)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "OPEN"
+      },
+      {
+        "field": "evt.detail",
+        "op": "matches",
+        "value": "^(/etc/(shadow|gshadow)|/(root|home/[^/]+)/\\.ssh/id_[^/.]+)$"
+      },
+      {
+        "field": "proc.exe_name",
+        "op": "not_in_set",
+        "value": [
+          "passwd",
+          "chpasswd",
+          "usermod",
+          "useradd",
+          "userdel",
+          "chage",
+          "vipw",
+          "ssh-keygen"
+        ]
+      }
+    ]
   },
   {
-    id: "suid_backdoor",
-    technique: "T1548",
-    severity: "high",
-    enabled: true,
-    description: "setuid bit set on a file, possible privilege backdoor.",
-    hits: 0,
+    "id": "suid_backdoor",
+    "technique": "T1548",
+    "severity": "high",
+    "description": "chmod set the setuid or setgid bit",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "CHMOD"
+      },
+      {
+        "field": "evt.detail",
+        "op": "matches",
+        "value": " mode=[2-7][0-7]{3}$"
+      },
+      {
+        "field": "proc.exe_name",
+        "op": "not_in_set",
+        "value": [
+          "dpkg",
+          "apt",
+          "apt-get",
+          "unattended-upgrade",
+          "unattended-upgr"
+        ]
+      }
+    ]
   },
   {
-    id: "world_writable_sensitive",
-    technique: "T1222",
-    severity: "medium",
-    enabled: true,
-    description: "A sensitive file was made world-writable.",
-    hits: 0,
+    "id": "world_writable_sensitive",
+    "technique": "T1222",
+    "severity": "medium",
+    "description": "chmod made a file under /etc writable by everyone",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "CHMOD"
+      },
+      {
+        "field": "evt.detail",
+        "op": "matches",
+        "value": "^/etc/\\S+ mode=[0-7]{3}[2367]$"
+      }
+    ]
   },
   {
-    id: "code_injection_rwx",
-    technique: "T1055",
-    severity: "high",
-    enabled: true,
-    description: "Memory was remapped as executable, possible W^X violation.",
-    hits: 0,
+    "id": "code_injection_rwx",
+    "technique": "T1055",
+    "severity": "high",
+    "description": "mprotect asked for memory that is writable and executable at once (possible shellcode)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "MPROTECT"
+      },
+      {
+        "field": "evt.detail",
+        "op": "matches",
+        "value": "prot=[r-]wx"
+      }
+    ]
   },
   {
-    id: "kernel_module_load",
-    technique: "T1547",
-    severity: "critical",
-    enabled: true,
-    description: "A kernel module was loaded.",
-    hits: 0,
+    "id": "kernel_module_load",
+    "technique": "T1547",
+    "severity": "critical",
+    "description": "A kernel module was loaded (code now runs with more power than root)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "MODULE"
+      }
+    ]
   },
   {
-    id: "backdoor_listener",
-    technique: "T1071",
-    severity: "high",
-    enabled: true,
-    description: "A suspicious listener was detected.",
-    hits: 0,
+    "id": "backdoor_listener",
+    "technique": "T1071",
+    "severity": "high",
+    "description": "A shell, netcat, socat or script interpreter opened a listening socket (possible bind shell)",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "BIND"
+      },
+      {
+        "field": "proc.exe_name",
+        "op": "matches",
+        "value": "^(sh|bash|dash|zsh|ksh|busybox|nc|ncat|netcat|nc\\.openbsd|nc\\.traditional|socat|python[0-9.]*|perl|ruby|php[0-9.]*)$"
+      }
+    ]
   },
   {
-    id: "download_and_execute",
-    technique: "T1059",
-    severity: "high",
-    enabled: true,
-    description: "A downloaded payload was followed by execution.",
-    hits: 0,
-  },
+    "id": "download_and_execute",
+    "technique": "T1059",
+    "severity": "high",
+    "description": "Executed a file that a network-connected process wrote in the last 5 minutes",
+    "where": [
+      {
+        "field": "evt.type",
+        "op": "eq",
+        "value": "EXEC"
+      },
+      {
+        "field": "file.fetched_age",
+        "op": "lte",
+        "value": 300
+      }
+    ]
+  }
 ];
 
+const SNAPSHOT_BY_ID = Object.fromEntries(RULE_SNAPSHOT.map((rule) => [rule.id, rule]));
+
+// The primary ATT&CK tactic of each technique the rules use. A technique name
+// such as "Process Injection" is not a tactic, so it is not used as a heading.
 const tacticMap = {
-  T1059: "COMMAND AND CONTROL",
-  T1055: "PROCESS INJECTION",
+  T1059: "EXECUTION",
+  T1055: "DEFENSE EVASION",
   T1548: "PRIVILEGE ESCALATION",
   T1071: "COMMAND AND CONTROL",
   T1486: "IMPACT",
-  T1070: "IMPACT",
+  T1070: "DEFENSE EVASION",
   T1547: "PERSISTENCE",
   T1003: "CREDENTIAL ACCESS",
-  T1222: "FILE AND DIRECTORY PERMISSIONS",
+  T1222: "DEFENSE EVASION",
 };
 
 const severityClass = {
@@ -139,170 +402,65 @@ const severityClass = {
 };
 
 function getTactic(technique) {
-  return tacticMap[technique] || "DETECTION RULES";
+  return tacticMap[technique] || "OTHER";
 }
 
+// Use a where list from the API if L4 ever sends one, else the YAML copy.
+function getWhere(rule) {
+  if (Array.isArray(rule.where)) return rule.where;
+  return SNAPSHOT_BY_ID[rule.id]?.where ?? null;
+}
+
+function formatValue(value) {
+  if (Array.isArray(value)) return `[${value.join(", ")}]`;
+  return String(value);
+}
+
+// The event type comes from the rule's own evt.type clause.
 function getEventType(rule) {
-  const id = String(rule.id || "").toLowerCase();
-  const description = String(rule.description || "").toLowerCase();
+  const clause = getWhere(rule)?.find((c) => c.field === "evt.type");
+  if (!clause) return "?";
+  return Array.isArray(clause.value) ? clause.value.join(" | ") : String(clause.value);
+}
 
-  if (
-    id.includes("connect") ||
-    id.includes("listener") ||
-    description.includes("network") ||
-    description.includes("connect")
-  ) {
-    return "CONNECT";
-  }
+// Every clause except evt.type, written as "field op value", as in the YAML.
+function getRuleCondition(rule) {
+  const where = getWhere(rule);
+  if (!where) return null;
 
-  if (
-    id.includes("ptrace") ||
-    description.includes("ptrace") ||
-    description.includes("process injection")
-  ) {
-    return "PTRACE";
-  }
+  const rest = where.filter((c) => c.field !== "evt.type");
+  if (rest.length === 0) return ["fires on the event type alone"];
 
-  if (
-    id.includes("suid") ||
-    id.includes("chmod") ||
-    description.includes("permission")
-  ) {
-    return "CHMOD";
-  }
-
-  if (
-    id.includes("module") ||
-    description.includes("kernel module")
-  ) {
-    return "MODULE";
-  }
-
-  if (
-    id.includes("exec") ||
-    id.includes("shell") ||
-    description.includes("shell")
-  ) {
-    return "EXEC";
-  }
-
-  if (
-    id.includes("write") ||
-    id.includes("ransomware") ||
-    description.includes("file")
-  ) {
-    return "OPEN";
-  }
-
-  return "EVENT";
+  return rest.map((c) => `${c.field} ${c.op} ${formatValue(c.value)}`);
 }
 
 function getRuleTitle(rule) {
-  const id = String(rule.id || "");
-
   const titles = {
-    network_parent_shell: "Network parent shell",
+    connect_after_exec: "Outbound connect within 3 s of exec",
+    network_parent_shell: "Shell started by a network-connected parent",
     ptrace_then_exec: "ptrace followed by exec",
-    suid_shell: "setuid(0) immediately followed by a shell",
-    connect_after_exec: "Beaconing — outbound connect shortly after exec",
-    ransomware_burst: "Rapid file destruction (possible ransomware)",
-    log_tampering: "Log tampering activity",
-    persistence_autostart: "Write to an autostart / persistence location",
-    credential_access: "Access to a credential store",
-    suid_backdoor: "setuid bit set on a file (privilege backdoor)",
-    world_writable_sensitive: "File made world-writable",
-    code_injection_rwx: "Memory remapped executable (W^X violation)",
+    suid_shell: "Gained root, then started a shell",
+    ransomware_burst: "Burst of deletes and renames",
+    log_tampering: "Write or delete under /var/log",
+    persistence_autostart: "Write to an autostart location",
+    credential_access: "Write-intent open of a credential file",
+    suid_backdoor: "setuid or setgid bit set by chmod",
+    world_writable_sensitive: "File under /etc made world-writable",
+    code_injection_rwx: "Writable and executable memory",
     kernel_module_load: "Kernel module loaded",
-    backdoor_listener: "Suspicious listener (possible bind shell / backdoor)",
-    download_and_execute: "Download followed by execution",
+    backdoor_listener: "Shell or interpreter opened a listener",
+    download_and_execute: "Ran a recently downloaded file",
   };
 
-  return titles[id] || id.replaceAll("_", " ");
+  return titles[rule.id] || String(rule.id || "").replaceAll("_", " ");
 }
 
 function getRuleDescription(rule) {
-  if (rule.description) {
-    return rule.description;
-  }
-
-  const descriptions = {
-    suid_shell:
-      "A process requested uid 0 and then launched a shell, indicating a possible privilege escalation path.",
-    suid_backdoor:
-      "A chmod operation created a setuid executable that may provide a privilege backdoor.",
-    world_writable_sensitive:
-      "A sensitive file was changed to mode 0777, making it writable by every local user.",
-    code_injection_rwx:
-      "Executable writable memory can indicate an injected payload being changed into runnable code.",
-    connect_after_exec:
-      "A shell or recently executed process connected to a network destination shortly after starting.",
-    backdoor_listener:
-      "A shell or freshly executed process opened a local listener that may represent a bind shell.",
-    ransomware_burst:
-      "A single process rapidly destroyed or renamed many files, matching a possible ransomware pattern.",
-    persistence_autostart:
-      "A file was opened for writing under a common startup or persistence location.",
-    kernel_module_load:
-      "A process loaded a kernel module. Outside normal boot activity this can be a high-signal event.",
-    credential_access:
-      "A process accessed a location commonly associated with stored credentials.",
-  };
-
-  return descriptions[rule.id] || "Detection rule configured by the HIDS rule engine.";
-}
-
-function getRuleCondition(rule) {
-  const id = String(rule.id || "");
-  const eventType = getEventType(rule);
-
-  const conditions = {
-    network_parent_shell: [
-      "proc.is_shell eq true",
-      "parent.connect_count ge 1",
-    ],
-    ptrace_then_exec: [
-      "since.ptrace le 3",
-      "proc.is_shell eq true",
-    ],
-    suid_shell: [
-      "proc.setuid_to_root eq true",
-      "since.setuid le 3",
-      "proc.is_shell eq true",
-    ],
-    connect_after_exec: [
-      "since.exec le 3",
-      "proc.is_shell eq true",
-      "parent.connect_count ge 1",
-    ],
-    ransomware_burst: [
-      "proc.destruction_burst ge 15",
-    ],
-    persistence_autostart: [
-      'event.detail matches "/etc/cron/*"',
-      'event.detail matches "/etc/systemd/*"',
-      'event.detail endswith ".bashrc"',
-      'event.detail endswith ".profile"',
-      'event.detail endswith "/authorized_keys"',
-    ],
-    kernel_module_load: [
-      "fires on the event type alone",
-    ],
-    backdoor_listener: [
-      "proc.is_shell eq true",
-      "since.exec le 5",
-    ],
-    world_writable_sensitive: [
-      'event.detail contains "mode=0777"',
-    ],
-    code_injection_rwx: [
-      'event.detail contains "exec=1"',
-    ],
-    suid_backdoor: [
-      "proc.setuid_bit_set eq true",
-    ],
-  };
-
-  return conditions[id] || [`event.type eq ${eventType}`];
+  return (
+    rule.description ||
+    SNAPSHOT_BY_ID[rule.id]?.description ||
+    "No description returned by the backend."
+  );
 }
 
 function RuleCard({ rule, onToggle, busy }) {
@@ -327,7 +485,7 @@ function RuleCard({ rule, onToggle, busy }) {
           type="button"
           className={`rule-toggle ${rule.enabled ? "enabled" : ""}`}
           onClick={() => onToggle(rule)}
-          disabled={busy}
+          disabled={busy || rule.enabled === null}
           aria-label={`${rule.enabled ? "Disable" : "Enable"} ${rule.id}`}
         >
           <span className="rule-toggle-knob" />
@@ -357,77 +515,71 @@ function RuleCard({ rule, onToggle, busy }) {
           <span>where</span>
 
           <div className="rule-condition-list">
-            {conditions.map((condition, index) => (
-              <code key={`${rule.id}-${index}`}>
-                {condition}
-              </code>
-            ))}
+            {conditions ? (
+              conditions.map((condition, index) => (
+                <code key={`${rule.id}-${index}`}>
+                  {condition}
+                </code>
+              ))
+            ) : (
+              <code>not in this console&apos;s copy of the rule files</code>
+            )}
           </div>
         </div>
       </div>
 
       <div className="rule-card-footer">
         <span>
-          {rule.enabled ? "ACTIVE" : "DISABLED"}
+          {rule.enabled === null ? "STATE UNKNOWN" : rule.enabled ? "ACTIVE" : "DISABLED"}
         </span>
 
         <span>
-          HITS <strong>{rule.hits ?? 0}</strong>
+          HITS <strong>{rule.hits ?? "-"}</strong>
         </span>
       </div>
     </article>
   );
 }
 
+async function fetchRules() {
+  const response = await fetch(`${API_BASE}/rules`);
+  if (!response.ok) {
+    throw new Error(`Rules request failed: ${response.status}`);
+  }
+  return response.json();
+}
+
 export default function Rules() {
-  const [rules, setRules] = useState([]);
-  const [errors, setErrors] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const rulesPoll = usePoll(fetchRules, 5000);
   const [busyId, setBusyId] = useState(null);
-  const [demo, setDemo] = useState(false);
   const [actionError, setActionError] = useState("");
 
-  async function loadRules() {
-    try {
-      const response = await fetch(`${API_BASE}/rules`);
+  const loading = !rulesPoll.data && !rulesPoll.error;
+  // When /api/rules fails, show the YAML copy and say so on the page, so
+  // nobody reads it as the live rule set.
+  const demo = Boolean(rulesPoll.error);
 
-      if (!response.ok) {
-        throw new Error(`Rules request failed: ${response.status}`);
-      }
+  const rules = useMemo(() => {
+    if (demo) return RULE_SNAPSHOT.map((rule) => ({ ...rule, enabled: null, hits: null }));
+    return Array.isArray(rulesPoll.data?.rules) ? rulesPoll.data.rules : [];
+  }, [demo, rulesPoll.data]);
 
-      const data = await response.json();
-
-      setRules(Array.isArray(data.rules) ? data.rules : []);
-      setErrors(Array.isArray(data.errors) ? data.errors : []);
-      setDemo(false);
-    } catch (error) {
-      // The backend could not give us rules. Show the built-in sample list,
-      // but say so on the page, so nobody reads it as the live rule set.
-      setRules(FALLBACK_RULES);
-      setErrors([]);
-      setDemo(true);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const errors = !demo && Array.isArray(rulesPoll.data?.errors) ? rulesPoll.data.errors : [];
 
   async function handleToggle(rule) {
     setBusyId(rule.id);
     setActionError("");
 
     try {
-      const response = await fetch(
-        `${API_BASE}/rules/${encodeURIComponent(rule.id)}/toggle`,
-        {
-          method: "POST",
-        }
-      );
+      const response = await fetch(`${API_BASE}/rules/${encodeURIComponent(rule.id)}/toggle`, {
+        method: "POST",
+      });
 
       if (!response.ok) {
         throw new Error(`Toggle failed: ${response.status}`);
       }
 
-      await loadRules();
+      await rulesPoll.refresh();
     } catch (error) {
       // Do not swap the list for sample data here. Report the failure instead.
       setActionError(`Could not toggle ${rule.id}: ${error.message}`);
@@ -435,14 +587,6 @@ export default function Rules() {
       setBusyId(null);
     }
   }
-
-  useEffect(() => {
-    loadRules();
-
-    const timer = setInterval(loadRules, 5000);
-
-    return () => clearInterval(timer);
-  }, []);
 
   const groupedRules = useMemo(() => {
     const groups = {};
@@ -460,15 +604,16 @@ export default function Rules() {
     return groups;
   }, [rules]);
 
+  // Roughly the order of the ATT&CK matrix, left to right.
   const groupOrder = [
-    "PRIVILEGE ESCALATION",
-    "COMMAND AND CONTROL",
-    "PROCESS INJECTION",
-    "IMPACT",
+    "EXECUTION",
     "PERSISTENCE",
+    "PRIVILEGE ESCALATION",
+    "DEFENSE EVASION",
     "CREDENTIAL ACCESS",
-    "FILE AND DIRECTORY PERMISSIONS",
-    "DETECTION RULES",
+    "COMMAND AND CONTROL",
+    "IMPACT",
+    "OTHER",
   ];
 
   const orderedGroups = Object.entries(groupedRules).sort(
@@ -495,6 +640,13 @@ export default function Rules() {
           color: #e8c34a;
           font-family: "JetBrains Mono", monospace;
           font-size: 11px;
+        }
+
+        .rules-source {
+          margin: -8px 0 14px;
+          color: var(--mute, #7e8aa0);
+          font-family: "JetBrains Mono", monospace;
+          font-size: 10px;
         }
 
         .rules-page {
@@ -722,7 +874,12 @@ export default function Rules() {
           gap: 2px;
         }
 
-        .rule-condition-list code {
+        /* Every condition gets the same look. The first one is not special. */
+        .rule-condition-list code,
+        .rule-condition-list code:first-child {
+          padding: 0;
+          border: 0;
+          background: none;
           color: #42c9bd;
         }
 
@@ -863,17 +1020,19 @@ export default function Rules() {
           <span>
             ACTIVE{" "}
             <strong>
-              {rules.filter((rule) => rule.enabled).length}
+              {demo ? "-" : rules.filter((rule) => rule.enabled).length}
             </strong>
           </span>
 
           <span>
             HITS{" "}
             <strong>
-              {rules.reduce(
-                (total, rule) => total + Number(rule.hits || 0),
-                0
-              )}
+              {demo
+                ? "-"
+                : rules.reduce(
+                    (total, rule) => total + Number(rule.hits || 0),
+                    0
+                  )}
             </strong>
           </span>
         </div>
@@ -881,10 +1040,16 @@ export default function Rules() {
 
       {demo && (
         <div className="rule-demo">
-          Demo data. The backend did not return a rule set from /api/rules, so
-          this is the built-in sample list. Toggles will not work.
+          /api/rules did not answer, so this list comes from the console&apos;s
+          copy of the rule files ({RULES_SOURCE}). On/off state and hit counts
+          are unknown, and toggles are disabled.
         </div>
       )}
+
+      <p className="rules-source">
+        The on and where lines come from {RULES_SOURCE}, because /api/rules does
+        not send conditions.
+      </p>
 
       {actionError && <div className="rule-error">{actionError}</div>}
 
