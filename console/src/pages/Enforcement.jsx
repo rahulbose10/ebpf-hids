@@ -1,7 +1,12 @@
-
 import { useState } from "react";
+import StatCard from "../components/StatCard";
 
+// Rows of a response audit log. Empty on purpose: there is no backend audit
+// endpoint yet, so nothing may be invented here.
 const actionLog = [];
+
+const FIELD =
+  "rounded border border-line bg-ink px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-signal";
 
 function Toggle({ checked, onChange, label }) {
   return (
@@ -17,9 +22,7 @@ function Toggle({ checked, onChange, label }) {
     >
       <span
         className={`absolute top-0.5 h-4 w-4 rounded-full transition ${
-          checked
-            ? "left-[22px] bg-signal"
-            : "left-0.5 bg-mute"
+          checked ? "left-[22px] bg-signal" : "left-0.5 bg-mute"
         }`}
       />
     </button>
@@ -28,12 +31,10 @@ function Toggle({ checked, onChange, label }) {
 
 function PolicyRow({ title, description, children }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 py-3">
-      <div>
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-mute">
-          {description}
-        </p>
+    <div className="flex items-center justify-between gap-4 py-2.5">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium">{title}</p>
+        <p className="text-[11px] leading-snug text-mute">{description}</p>
       </div>
       {children}
     </div>
@@ -46,193 +47,118 @@ export default function Enforcement() {
   const [action, setAction] = useState("kill");
   const [minSeverity, setMinSeverity] = useState("critical");
 
-  const loggedCount = actionLog.length;
-  const executedCount = actionLog.filter(
-    (item) => item.status === "executed"
-  ).length;
-  const dryRunCount = actionLog.filter(
-    (item) => item.status === "dry-run"
-  ).length;
-  const blockedCount = actionLog.filter(
-    (item) => item.status === "BLOCKED-by-guard"
-  ).length;
+  const count = (status) => actionLog.filter((item) => item.status === status).length;
 
   return (
-    <main className="min-h-full space-y-4 p-4 text-text sm:p-6">
-      <header>
-        <h1 className="font-display text-2xl font-semibold">
-          Enforcement
-        </h1>
-        <p className="mt-2 max-w-4xl text-sm leading-6 text-mute">
-          Active response. The engine can terminate or quarantine a
-          process when an alert meets the threshold. It is off and
-          dry-run by default. Arming is an admin action.
+    <div>
+      <div className="page-header">
+        <div className="eyebrow">Active response</div>
+        <h1>Enforcement</h1>
+        <p>
+          The engine can terminate or quarantine a process when an alert meets the threshold. It is
+          off and dry-run by default.
         </p>
-      </header>
+      </div>
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <div className="panel p-4">
-          <p className="eyebrow">STATUS</p>
-          <p className="mt-2 font-display text-2xl font-semibold">
-            {activeResponse ? "ARMED" : "OFF"}
-          </p>
-          <p className="mt-1 text-xs text-mute">
-            {activeResponse ? "UI selection only" : "no action taken"}
-          </p>
-        </div>
+      <div className="mb-3 rounded border border-medium/40 bg-medium/10 px-3 py-2 font-mono text-[11px] text-medium">
+        These controls change this browser tab only. They do not change the backend enforcement
+        configuration, and the audit log is not connected.
+      </div>
 
-        <div className="panel p-4">
-          <p className="eyebrow">ACTION</p>
-          <p className="mt-2 font-display text-2xl font-semibold">
-            {action}
-          </p>
-          <p className="mt-1 text-xs text-mute">
-            kill or quarantine
-          </p>
-        </div>
+      <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard
+          label="Status"
+          value={activeResponse ? "ARMED" : "OFF"}
+          sub={activeResponse ? "UI selection only" : "no action taken"}
+          tone={activeResponse ? "high" : undefined}
+        />
+        <StatCard label="Action" value={action} sub="kill or quarantine" />
+        <StatCard label="Min severity" value={minSeverity} sub="threshold to act" />
+        <StatCard
+          label="Actions logged"
+          value={actionLog.length}
+          sub={`${count("executed")} executed, ${count("dry-run")} dry-run, ${count("BLOCKED-by-guard")} guarded`}
+        />
+      </div>
 
-        <div className="panel p-4">
-          <p className="eyebrow">MIN SEVERITY</p>
-          <p className="mt-2 font-display text-2xl font-semibold">
-            {minSeverity}
-          </p>
-          <p className="mt-1 text-xs text-mute">
-            threshold to act
-          </p>
-        </div>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="panel">
+          <div className="panel-label">Response policy</div>
+          <div className="panel-body divide-y divide-line">
+            <PolicyRow title="Active response" description="Master switch. When off, the engine only detects.">
+              <Toggle label="Active response" checked={activeResponse} onChange={setActiveResponse} />
+            </PolicyRow>
 
-        <div className="panel p-4">
-          <p className="eyebrow">ACTIONS LOGGED</p>
-          <p className="mt-2 font-display text-2xl font-semibold">
-            {loggedCount}
-          </p>
-          <p className="mt-1 text-xs text-mute">
-            {executedCount} executed · {dryRunCount} dry-run ·{" "}
-            {blockedCount} guarded
-          </p>
-        </div>
-      </section>
-
-      <section className="panel px-4 py-4 sm:px-5">
-        <p className="eyebrow">RESPONSE POLICY</p>
-
-        <div className="mt-2 divide-y divide-line">
-          <PolicyRow
-            title="Active response"
-            description="Master switch. When off, the engine only detects."
-          >
-            <Toggle
-              label="Active response"
-              checked={activeResponse}
-              onChange={setActiveResponse}
-            />
-          </PolicyRow>
-
-          <PolicyRow
-            title="Dry-run (recommended)"
-            description="Decide and log the action without executing it. Validate against benign traffic before disabling."
-          >
-            <Toggle
-              label="Dry-run"
-              checked={dryRun}
-              onChange={setDryRun}
-            />
-          </PolicyRow>
-
-          <PolicyRow
-            title="Action"
-            description="What to do to a flagged process."
-          >
-            <select
-              value={action}
-              onChange={(event) => setAction(event.target.value)}
-              className="rounded-md border border-line bg-ink px-3 py-2 font-mono text-sm outline-none focus:border-signal"
+            <PolicyRow
+              title="Dry-run (recommended)"
+              description="Decide and log the action without executing it. Check against benign traffic before turning this off."
             >
-              <option value="kill">kill</option>
-              <option value="quarantine">quarantine</option>
-            </select>
-          </PolicyRow>
+              <Toggle label="Dry-run" checked={dryRun} onChange={setDryRun} />
+            </PolicyRow>
 
-          <PolicyRow
-            title="Minimum severity"
-            description="Only alerts at or above this trigger a response."
-          >
-            <select
-              value={minSeverity}
-              onChange={(event) => setMinSeverity(event.target.value)}
-              className="rounded-md border border-line bg-ink px-3 py-2 font-mono text-sm outline-none focus:border-signal"
-            >
-              <option value="critical">critical</option>
-              <option value="high">high</option>
-              <option value="medium">medium</option>
-              <option value="low">low</option>
-            </select>
-          </PolicyRow>
+            <PolicyRow title="Action" description="What to do to a flagged process.">
+              <select value={action} onChange={(e) => setAction(e.target.value)} className={FIELD}>
+                <option value="kill">kill</option>
+                <option value="quarantine">quarantine</option>
+              </select>
+            </PolicyRow>
+
+            <PolicyRow title="Minimum severity" description="Only alerts at or above this trigger a response.">
+              <select value={minSeverity} onChange={(e) => setMinSeverity(e.target.value)} className={FIELD}>
+                <option value="critical">critical</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+            </PolicyRow>
+          </div>
         </div>
 
-        <p className="mt-3 border-t border-line pt-3 text-xs text-mute">
-          These controls change only this page's local state. They do
-          not change the backend enforcement configuration.
-        </p>
-      </section>
+        <div className="panel self-start">
+          <div className="panel-label">In-kernel prevention</div>
+          <div className="panel-body text-[12px] leading-relaxed text-mute">
+            This page controls the userspace response. The stronger layer is an eBPF enforcement
+            program that can deny an operation before it happens. Its status is not connected to this
+            console yet.
+          </div>
+        </div>
+      </div>
 
-      <section className="panel p-4 sm:p-5">
-        <p className="eyebrow">
-          IN-KERNEL PREVENTION (SEPARATE LAYER)
-        </p>
-        <p className="mt-3 text-sm leading-6 text-mute">
-          This page controls the userspace response. The stronger layer
-          is an eBPF enforcement program that can deny an operation
-          before it happens. Its actual status is not connected to
-          this frontend.
-        </p>
-      </section>
-
-      <section className="panel overflow-hidden">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5">
-          <p className="eyebrow">RESPONSE AUDIT LOG</p>
-          <span className="font-mono text-xs text-mute">
-            {loggedCount} recent
-          </span>
+      <div className="panel mt-3">
+        <div className="panel-label flex items-center justify-between">
+          <span>Response audit log</span>
+          <span>{actionLog.length} recent</span>
         </div>
 
         {actionLog.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-mute">
-            No audit records available. Backend audit is not connected.
+          <div className="px-4 py-6 text-center font-mono text-[11px] text-mute">
+            No audit records. The backend audit endpoint is not connected.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[650px] text-left text-sm">
-              <thead className="bg-ink-800/70 text-mute">
+            <table className="w-full min-w-[650px] text-left text-[12px]">
+              <thead className="text-mute">
                 <tr className="eyebrow">
-                  <th className="px-4 py-3">TIME</th>
-                  <th className="px-4 py-3">ACTION</th>
-                  <th className="px-4 py-3">TARGET</th>
-                  <th className="px-4 py-3">STATUS</th>
+                  <th className="px-4 py-2">Time</th>
+                  <th className="px-4 py-2">Action</th>
+                  <th className="px-4 py-2">Target</th>
+                  <th className="px-4 py-2">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {actionLog.map((item) => (
                   <tr key={item.id} className="border-t border-line">
-                    <td className="px-4 py-3 font-mono text-mute">
-                      {item.time}
-                    </td>
-                    <td className="px-4 py-3">{item.action}</td>
-                    <td className="px-4 py-3 font-mono text-mute">
-                      {item.target}
-                    </td>
-                    <td className="px-4 py-3">{item.status}</td>
+                    <td className="px-4 py-2 font-mono text-mute">{item.time}</td>
+                    <td className="px-4 py-2">{item.action}</td>
+                    <td className="px-4 py-2 font-mono text-mute">{item.target}</td>
+                    <td className="px-4 py-2">{item.status}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-
-        <div className="border-t border-line px-4 py-3 text-xs text-mute">
-          DATA SOURCE: MOCK · LIVE BACKEND AUDIT NOT CONNECTED
-        </div>
-      </section>
-    </main>
+      </div>
+    </div>
   );
 }
