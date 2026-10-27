@@ -289,3 +289,11 @@
 - Three attack tests on the live sensor (reverse shell shape, chmod 4755, 30 fast renames): all caught. The cleanup rm -rf of those 30 files raised ransomware_burst too.
 - Third idle run, 30 minutes with cron.hourly at 21:17:01 inside it: 7115 events, 0 alerts, 0 dropped. The cron false alarm is gone on the real host.
 - Still open: rm -rf of big folders will alert critical. credential_access cannot see reads of /etc/shadow because the sensor only reports write opens. Relative paths from unlinkat/renameat/fchmodat defeat the path rules.
+
+## 2026-10-27 - L1 kernel sensor, session 5 (live check with the engine, sample file)
+- Fast-forwarded l1-sensor to main c9cfd2a, so this branch now has the L2 engine. The "no L2 engine yet" lines in sessions 3 and 4 were true when written and are left as they were.
+- Piped the real loader into python -m server.ingest. One run saw 2382 events, 2 alerts, 0 bad lines, 0 engine errors. The alerts: kernel_module_load on MODULE dummy.ko (sudo modprobe dummy) and code_injection_rwx on MPROTECT prot=rwx (python mprotect with PROT_EXEC). Screenshot in docs/live-pipeline.png.
+- Rules seen firing on the live sensor so far: connect_after_exec, network_parent_shell, suid_backdoor, backdoor_listener, ransomware_burst (L2 chat) plus kernel_module_load and code_injection_rwx. That is 7 of 14. The other 7 are only proven on mock events and in tests.
+- strace -p on a sleeping process gave 2 PTRACE events.
+- Added samples/events.jsonl: 160 events from a 45 s and a 20 s capture, lab commands only, 11 of the 12 event types in docs/sensor-contract.md. CORRELATED is missing because it needs --correlate. 42 of the first 192 lines were Firefox profile paths, dropped, and the username and hostname replaced. Replays through server.ingest with 0 bad lines and 3 alerts, all from the lab commands (bind on 127.0.0.1, modprobe dummy, rwx mprotect).
+- Still open: reads of /etc/shadow still make no event. rm -rf reports relative paths. A failed exec during a PATH search still shows up as an EXEC event. Exec blocking is not done, only ptrace. 7 rules have never fired live.
