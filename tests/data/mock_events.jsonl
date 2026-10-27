@@ -1,0 +1,83 @@
+{"ts":1284.378298,"pid":1000,"ppid":999,"uid":1000,"comm":"gnome-terminal-","type":"EXEC","detail":"/usr/bin/bash"}
+{"ts":1284.388298,"pid":1000,"ppid":999,"uid":1000,"comm":"bash","type":"OPEN","detail":""}
+{"ts":1286.478298,"pid":1001,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/ls"}
+{"ts":1289.378298,"pid":1002,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/vim.basic"}
+{"ts":1293.678298,"pid":1002,"ppid":1000,"uid":1000,"comm":"vim","type":"OPEN","detail":"/home/lab/notes.txt"}
+{"ts":1295.378298,"pid":1003,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/ping"}
+{"ts":1295.478298,"pid":1003,"ppid":1000,"uid":1000,"comm":"ping","type":"CONNECT","detail":"127.0.0.53:53"}
+{"ts":1296.378298,"pid":1,"ppid":0,"uid":0,"comm":"systemd","type":"OPEN","detail":"/run/systemd/units/invocation:apt-daily.service"}
+{"ts":1296.878298,"pid":600,"ppid":1,"uid":104,"comm":"rs:main Q:Reg","type":"OPEN","detail":"/var/log/syslog"}
+{"ts":1298.378298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s0.tmp -> /home/lab/.mozilla/firefox/p/s0"}
+{"ts":1298.381298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s1.tmp -> /home/lab/.mozilla/firefox/p/s1"}
+{"ts":1298.384298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s2.tmp -> /home/lab/.mozilla/firefox/p/s2"}
+{"ts":1298.387298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s3.tmp -> /home/lab/.mozilla/firefox/p/s3"}
+{"ts":1298.390298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s4.tmp -> /home/lab/.mozilla/firefox/p/s4"}
+{"ts":1298.393298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s5.tmp -> /home/lab/.mozilla/firefox/p/s5"}
+{"ts":1298.396298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s6.tmp -> /home/lab/.mozilla/firefox/p/s6"}
+{"ts":1298.399298,"pid":1004,"ppid":999,"uid":1000,"comm":"firefox","type":"RENAME","detail":"/home/lab/.mozilla/firefox/p/s7.tmp -> /home/lab/.mozilla/firefox/p/s7"}
+{"ts":1299.378298,"pid":1005,"ppid":999,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x7f3a12345000 prot=r-x suppressed=40"}
+{"ts":1300.378298,"pid":1006,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/ps"}
+{"ts":1300.478298,"pid":1006,"ppid":1000,"uid":1000,"comm":"ps","type":"PTRACE_CHECK","detail":"target_pid=1 mode=0x5 suppressed=7"}
+{"ts":1301.378298,"pid":1007,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/chmod"}
+{"ts":1301.478298,"pid":1007,"ppid":1000,"uid":1000,"comm":"chmod","type":"CHMOD","detail":"/tmp/build.sh mode=0755"}
+{"ts":1400.0,"pid":2000,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/python3"}
+{"ts":1401.0,"pid":2000,"ppid":1000,"uid":1000,"comm":"python3","type":"CONNECT","detail":"127.0.0.1:4444"}
+{"ts":1401.2,"pid":2001,"ppid":2000,"uid":1000,"comm":"python3","type":"EXEC","detail":"/bin/sh"}
+{"ts":1410.0,"pid":2010,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/tmp/hids-lab/inject"}
+{"ts":1415.0,"pid":2010,"ppid":1000,"uid":1000,"comm":"inject","type":"PTRACE","detail":"target_pid=1001"}
+{"ts":1415.4,"pid":2010,"ppid":1000,"uid":1000,"comm":"inject","type":"EXEC","detail":"/bin/sh"}
+{"ts":1420.0,"pid":2020,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/tmp/hids-lab/escalate"}
+{"ts":1425.0,"pid":2020,"ppid":1000,"uid":1000,"comm":"escalate","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":1425.2,"pid":2020,"ppid":1000,"uid":0,"comm":"escalate","type":"EXEC","detail":"/bin/sh"}
+{"ts":1430.0,"pid":2030,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/python3"}
+{"ts":1431.0,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f0 -> /tmp/hids-lab/f0.locked"}
+{"ts":1431.1,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f1 -> /tmp/hids-lab/f1.locked"}
+{"ts":1431.2,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f2 -> /tmp/hids-lab/f2.locked"}
+{"ts":1431.3,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f3 -> /tmp/hids-lab/f3.locked"}
+{"ts":1431.4,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f4 -> /tmp/hids-lab/f4.locked"}
+{"ts":1431.5,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f5 -> /tmp/hids-lab/f5.locked"}
+{"ts":1431.6,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f6 -> /tmp/hids-lab/f6.locked"}
+{"ts":1431.7,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f7 -> /tmp/hids-lab/f7.locked"}
+{"ts":1431.8,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f8 -> /tmp/hids-lab/f8.locked"}
+{"ts":1431.9,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f9 -> /tmp/hids-lab/f9.locked"}
+{"ts":1432.0,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f10 -> /tmp/hids-lab/f10.locked"}
+{"ts":1432.1,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f11 -> /tmp/hids-lab/f11.locked"}
+{"ts":1432.2,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f12 -> /tmp/hids-lab/f12.locked"}
+{"ts":1432.3,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f13 -> /tmp/hids-lab/f13.locked"}
+{"ts":1432.4,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f14 -> /tmp/hids-lab/f14.locked"}
+{"ts":1432.5,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f15 -> /tmp/hids-lab/f15.locked"}
+{"ts":1432.6,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f16 -> /tmp/hids-lab/f16.locked"}
+{"ts":1432.7,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f17 -> /tmp/hids-lab/f17.locked"}
+{"ts":1432.8,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f18 -> /tmp/hids-lab/f18.locked"}
+{"ts":1432.9,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f19 -> /tmp/hids-lab/f19.locked"}
+{"ts":1433.0,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f20 -> /tmp/hids-lab/f20.locked"}
+{"ts":1433.1,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f21 -> /tmp/hids-lab/f21.locked"}
+{"ts":1433.2,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f22 -> /tmp/hids-lab/f22.locked"}
+{"ts":1433.3,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f23 -> /tmp/hids-lab/f23.locked"}
+{"ts":1433.4,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f24 -> /tmp/hids-lab/f24.locked"}
+{"ts":1433.5,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f25 -> /tmp/hids-lab/f25.locked"}
+{"ts":1433.6,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f26 -> /tmp/hids-lab/f26.locked"}
+{"ts":1433.7,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f27 -> /tmp/hids-lab/f27.locked"}
+{"ts":1433.8,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f28 -> /tmp/hids-lab/f28.locked"}
+{"ts":1433.9,"pid":2030,"ppid":1000,"uid":1000,"comm":"python3","type":"RENAME","detail":"/tmp/hids-lab/f29 -> /tmp/hids-lab/f29.locked"}
+{"ts":1440.0,"pid":2040,"ppid":1000,"uid":0,"comm":"bash","type":"EXEC","detail":"/usr/bin/rm"}
+{"ts":1440.1,"pid":2040,"ppid":1000,"uid":0,"comm":"rm","type":"UNLINK","detail":"/var/log/hids-lab.log"}
+{"ts":1445.0,"pid":2050,"ppid":1000,"uid":0,"comm":"bash","type":"EXEC","detail":"/usr/bin/tee"}
+{"ts":1445.1,"pid":2050,"ppid":1000,"uid":0,"comm":"tee","type":"OPEN","detail":"/etc/cron.d/hids-lab"}
+{"ts":1450.0,"pid":2060,"ppid":1000,"uid":0,"comm":"bash","type":"EXEC","detail":"/usr/bin/tee"}
+{"ts":1450.1,"pid":2060,"ppid":1000,"uid":0,"comm":"tee","type":"OPEN","detail":"/etc/shadow"}
+{"ts":1455.0,"pid":2070,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/chmod"}
+{"ts":1455.1,"pid":2070,"ppid":1000,"uid":1000,"comm":"chmod","type":"CHMOD","detail":"/tmp/hids-lab/sh mode=4755"}
+{"ts":1460.0,"pid":2080,"ppid":1000,"uid":0,"comm":"bash","type":"EXEC","detail":"/usr/bin/chmod"}
+{"ts":1460.1,"pid":2080,"ppid":1000,"uid":0,"comm":"chmod","type":"CHMOD","detail":"/etc/hids-lab.conf mode=0666"}
+{"ts":1465.0,"pid":2090,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/tmp/hids-lab/shellcode"}
+{"ts":1465.3,"pid":2090,"ppid":1000,"uid":1000,"comm":"shellcode","type":"MPROTECT","detail":"addr=0x7f0000001000 prot=rwx suppressed=0"}
+{"ts":1470.0,"pid":2100,"ppid":1000,"uid":0,"comm":"bash","type":"EXEC","detail":"/usr/sbin/insmod"}
+{"ts":1470.2,"pid":2100,"ppid":1000,"uid":0,"comm":"insmod","type":"MODULE","detail":"dummy.ko"}
+{"ts":1475.0,"pid":2110,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/nc.openbsd"}
+{"ts":1475.1,"pid":2110,"ppid":1000,"uid":1000,"comm":"nc","type":"BIND","detail":"127.0.0.1:4445"}
+{"ts":1480.0,"pid":2120,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/curl"}
+{"ts":1480.1,"pid":2120,"ppid":1000,"uid":1000,"comm":"curl","type":"CONNECT","detail":"127.0.0.53:53"}
+{"ts":1480.2,"pid":2120,"ppid":1000,"uid":1000,"comm":"curl","type":"CONNECT","detail":"127.0.0.1:8000"}
+{"ts":1480.4,"pid":2120,"ppid":1000,"uid":1000,"comm":"curl","type":"OPEN","detail":"/tmp/hids-lab/payload"}
+{"ts":1482.0,"pid":2121,"ppid":1000,"uid":1000,"comm":"bash","type":"EXEC","detail":"/tmp/hids-lab/payload"}

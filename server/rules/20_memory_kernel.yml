@@ -1,0 +1,21 @@
+rules:
+  - id: code_injection_rwx
+    technique: T1055
+    severity: high
+    description: "mprotect asked for memory that is writable and executable at once (possible shellcode)"
+    where:
+      - field: evt.type
+        op: eq
+        value: MPROTECT
+      - field: evt.detail
+        op: matches
+        value: 'prot=[r-]wx'
+
+  - id: kernel_module_load
+    technique: T1547
+    severity: critical
+    description: "A kernel module was loaded (code now runs with more power than root)"
+    where:
+      - field: evt.type
+        op: eq
+        value: MODULE

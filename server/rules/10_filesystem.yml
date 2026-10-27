@@ -1,0 +1,101 @@
+rules:
+  - id: ransomware_burst
+    technique: T1486
+    severity: critical
+    description: "25 or more deletes/renames inside 5 s outside package and app cache folders (possible ransomware)"
+    where:
+      - field: evt.type
+        op: in_set
+        value: [UNLINK, RENAME]
+      - field: proc.destruction_burst
+        op: gte
+        value: 25
+
+  - id: log_tampering
+    technique: T1070
+    severity: high
+    description: "Write or delete under /var/log by something that is not a log daemon or package tool"
+    where:
+      - field: evt.type
+        op: in_set
+        value: [OPEN, UNLINK]
+      - field: evt.detail
+        op: matches
+        value: '^/var/log/'
+      - field: proc.exe_name
+        op: not_in_set
+        value:
+          - rsyslogd
+          - "rs:main Q:Reg"
+          - "in:imuxsock"
+          - "in:imklog"
+          - "in:imjournal"
+          - systemd-journald
+          - systemd-journal
+          - logrotate
+          - apt
+          - apt-get
+          - dpkg
+          - unattended-upgrade
+          - unattended-upgr
+          - update-alternatives
+          - update-alternat
+          - Xorg
+          - cupsd
+
+  - id: persistence_autostart
+    technique: T1547
+    severity: high
+    description: "Write to a cron, systemd unit, rc.local, init.d or XDG autostart location"
+    where:
+      - field: evt.type
+        op: in_set
+        value: [OPEN, RENAME]
+      - field: evt.detail
+        op: matches
+        value: '(^|-> )(/etc/(cron\.(d|daily|hourly|weekly|monthly)/|crontab$|anacrontab$|rc\.local$|init\.d/|systemd/(system|user)/|xdg/autostart/)|/var/spool/cron/|/(usr/)?lib/systemd/(system|user)/|/(root|home/[^/]+)/\.config/(systemd/user|autostart)/)'
+      - field: proc.exe_name
+        op: not_in_set
+        value: [dpkg, apt, apt-get, unattended-upgrade, unattended-upgr, systemd]
+
+  - id: credential_access
+    technique: T1003
+    severity: high
+    description: "Write-intent open of /etc/shadow, /etc/gshadow or an SSH private key (reads are not visible to the sensor)"
+    where:
+      - field: evt.type
+        op: eq
+        value: OPEN
+      - field: evt.detail
+        op: matches
+        value: '^(/etc/(shadow|gshadow)|/(root|home/[^/]+)/\.ssh/id_[^/.]+)$'
+      - field: proc.exe_name
+        op: not_in_set
+        value: [passwd, chpasswd, usermod, useradd, userdel, chage, vipw, ssh-keygen]
+
+  - id: suid_backdoor
+    technique: T1548
+    severity: high
+    description: "chmod set the setuid or setgid bit"
+    where:
+      - field: evt.type
+        op: eq
+        value: CHMOD
+      - field: evt.detail
+        op: matches
+        value: ' mode=[2-7][0-7]{3}$'
+      - field: proc.exe_name
+        op: not_in_set
+        value: [dpkg, apt, apt-get, unattended-upgrade, unattended-upgr]
+
+  - id: world_writable_sensitive
+    technique: T1222
+    severity: medium
+    description: "chmod made a file under /etc writable by everyone"
+    where:
+      - field: evt.type
+        op: eq
+        value: CHMOD
+      - field: evt.detail
+        op: matches
+        value: '^/etc/\S+ mode=[0-7]{3}[2367]$'
