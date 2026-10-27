@@ -107,9 +107,20 @@ All three attacks were caught on real sensor events. The listener and the client
 
 The second ransomware_burst alert is `rm -rf /tmp/lab` deleting the 30 renamed files in under 5 seconds. It is the same rule doing what it says, but it means any ordinary `rm -rf` of a folder with 25 or more files will raise a critical alert. The idle runs did not include one, so the false alarm rate for that case is unmeasured. Note also that the path in that alert is `f2.locked`, not `/tmp/lab/f2.locked`: the sensor reports a relative path for unlinkat, so the routine churn exclusion cannot match it either.
 
-### Idle run after the second round
+### Idle run after the second round (2026-10-27, 20:49:31 to 21:19:33, 30 minutes)
 
-TODO: repeat the 15 minutes, spanning minute 17 of an hour so cron.hourly runs inside the window, and paste the per-rule counts here.
+Same kind of use as the earlier runs, with cron.hourly inside the window on purpose. journalctl shows `CMD (cd / && run-parts --report /etc/cron.hourly)` at 21:17:01, inside the recording.
+
+    ingest: 7115 events, 0 alerts, 0 bad lines, 0 engine errors
+    dropped events: 0
+
+No alerts. The 14 from the first run and the 2 from the second run (Thunderbird starting, cron.hourly) did not come back. This run is twice as long as the first two and had more varied use than any of them, but it is still one machine, one user and 30 minutes, so 0 is what we measured, not a promise. The exact SETUID line cron emits was not captured, so the root to root shape is still inferred.
+
+Summary of the three idle runs, all with no attack sims:
+
+    run 1, about 15 min, before tuning:   9223 events, 14 alerts
+    run 2, about 15 min, first tuning:    5794 events,  2 alerts
+    run 3, 30 min, second tuning:         7115 events,  0 alerts
 
 ## Known blind spots
 
