@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API_BASE = "http://127.0.0.1:5000/api";
+// Same-origin path. Vite proxies /api to the backend in dev, so no host or
+// port is hardcoded and the page also works when served from another machine.
+const API_BASE = "/api";
 
 const FALLBACK_RULES = [
   {
@@ -382,6 +384,8 @@ export default function Rules() {
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
+  const [demo, setDemo] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   async function loadRules() {
     try {
@@ -395,16 +399,21 @@ export default function Rules() {
 
       setRules(Array.isArray(data.rules) ? data.rules : []);
       setErrors(Array.isArray(data.errors) ? data.errors : []);
+      setDemo(false);
     } catch (error) {
-        setRules(FALLBACK_RULES);
-        setErrors([]);
+      // The backend could not give us rules. Show the built-in sample list,
+      // but say so on the page, so nobody reads it as the live rule set.
+      setRules(FALLBACK_RULES);
+      setErrors([]);
+      setDemo(true);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   }
 
   async function handleToggle(rule) {
     setBusyId(rule.id);
+    setActionError("");
 
     try {
       const response = await fetch(
@@ -420,8 +429,8 @@ export default function Rules() {
 
       await loadRules();
     } catch (error) {
-    setRules(FALLBACK_RULES);
-    setErrors([]);
+      // Do not swap the list for sample data here. Report the failure instead.
+      setActionError(`Could not toggle ${rule.id}: ${error.message}`);
     } finally {
       setBusyId(null);
     }
@@ -477,8 +486,19 @@ export default function Rules() {
   return (
     <main className="rules-page">
       <style>{`
+        .rule-demo {
+          margin-bottom: 14px;
+          padding: 8px 12px;
+          border: 1px solid rgba(232, 195, 74, 0.35);
+          border-radius: 6px;
+          background: rgba(232, 195, 74, 0.06);
+          color: #e8c34a;
+          font-family: "JetBrains Mono", monospace;
+          font-size: 11px;
+        }
+
         .rules-page {
-          padding: 20px 22px 70px;
+          padding: 4px 0 40px;
           color: var(--text, #e6edf6);
           font-family: Inter, sans-serif;
         }
@@ -488,11 +508,11 @@ export default function Rules() {
           align-items: flex-end;
           justify-content: space-between;
           gap: 20px;
-          margin-bottom: 26px;
+          margin-bottom: 16px;
         }
 
         .rules-eyebrow {
-          margin-bottom: 7px;
+          margin-bottom: 4px;
           color: var(--signal, #4fd1c5);
           font-family: "JetBrains Mono", monospace;
           font-size: 11px;
@@ -503,7 +523,7 @@ export default function Rules() {
         .rules-header h1 {
           margin: 0;
           font-family: "Space Grotesk", sans-serif;
-          font-size: 28px;
+          font-size: 22px;
           font-weight: 600;
         }
 
@@ -531,7 +551,7 @@ export default function Rules() {
         }
 
         .rule-group {
-          margin-bottom: 30px;
+          margin-bottom: 20px;
         }
 
         .rule-group-title {
@@ -545,13 +565,13 @@ export default function Rules() {
 
         .rule-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 14px;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
         }
 
         .rule-card {
           position: relative;
-          min-height: 270px;
+          min-height: 0;
           overflow: hidden;
           padding: 15px 14px 12px;
           border: 1px solid var(--line, #243149);
@@ -645,7 +665,7 @@ export default function Rules() {
         }
 
         .rule-description {
-          min-height: 44px;
+          min-height: 0;
           margin: 0;
           color: var(--mute, #7e8aa0);
           font-size: 11px;
@@ -799,6 +819,12 @@ export default function Rules() {
           font-size: 12px;
         }
 
+        @media (max-width: 1400px) {
+          .rule-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
         @media (max-width: 900px) {
           .rule-grid {
             grid-template-columns: 1fr;
@@ -852,6 +878,15 @@ export default function Rules() {
           </span>
         </div>
       </header>
+
+      {demo && (
+        <div className="rule-demo">
+          Demo data. The backend did not return a rule set from /api/rules, so
+          this is the built-in sample list. Toggles will not work.
+        </div>
+      )}
+
+      {actionError && <div className="rule-error">{actionError}</div>}
 
       {errors.length > 0 && (
         <div className="rule-error">
