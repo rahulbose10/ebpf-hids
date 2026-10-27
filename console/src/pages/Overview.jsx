@@ -1,19 +1,7 @@
 import StatCard from "../components/StatCard";
+import SeverityChip from "../components/SeverityChip";
 import { api, usePoll } from "../api";
-
-// Full class strings so Tailwind can find them when it scans this file.
-const SEVERITY_CHIP = {
-  critical: "border-critical/50 bg-critical/10 text-critical",
-  high: "border-high/50 bg-high/10 text-high",
-  medium: "border-medium/50 bg-medium/10 text-medium",
-  low: "border-low/50 bg-low/10 text-low",
-};
-
-// ts from the sensor is kernel monotonic seconds since boot.
-// The contract forbids turning it into a wall clock time, so show it as is.
-function formatKts(ts) {
-  return typeof ts === "number" ? ts.toFixed(3) : "-";
-}
+import { formatKts } from "../format";
 
 function Overview() {
   const { data: health } = usePoll(api.health, 4000);
@@ -102,19 +90,13 @@ function Overview() {
               </div>
             ) : (
               alerts.slice(0, 30).map((alert, index) => {
-                const severity = String(alert.severity || "low").toLowerCase();
-
                 return (
                   <div
                     key={`${alert.ts}-${alert.rule}-${index}`}
                     className="flex gap-3 border-b border-line/50 px-4 py-2.5"
                   >
-                    <span
-                      className={`mt-px h-[18px] shrink-0 rounded border px-1.5 font-mono text-[10px] leading-4 ${
-                        SEVERITY_CHIP[severity] || SEVERITY_CHIP.low
-                      }`}
-                    >
-                      {severity}
+                    <span className="mt-px">
+                      <SeverityChip severity={alert.severity} />
                     </span>
 
                     <div className="min-w-0">
