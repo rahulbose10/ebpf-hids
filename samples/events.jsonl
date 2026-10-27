@@ -1,0 +1,160 @@
+{"ts":6284.965927,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6286.951890,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdb7000 prot=r-x suppressed=0"}
+{"ts":6289.404878,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdcd000 prot=r-x suppressed=1"}
+{"ts":6290.343924,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6293.212190,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdd8000 prot=r-x suppressed=130"}
+{"ts":6294.550583,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfddd000 prot=r-x suppressed=38"}
+{"ts":6295.342545,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6296.062080,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfddf000 prot=r-x suppressed=8"}
+{"ts":6296.684412,"pid":11760,"ppid":11071,"uid":1000,"comm":"bash","type":"OPEN","detail":"/dev/null"}
+{"ts":6296.684446,"pid":11760,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/ls"}
+{"ts":6296.688372,"pid":11761,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/curl"}
+{"ts":6296.695800,"pid":11761,"ppid":11071,"uid":1000,"comm":"curl","type":"CONNECT","detail":"127.0.0.53:53"}
+{"ts":6296.696167,"pid":454,"ppid":1,"uid":101,"comm":"systemd-resolve","type":"CONNECT","detail":"192.168.0.1:53"}
+{"ts":6296.696369,"pid":454,"ppid":1,"uid":101,"comm":"systemd-resolve","type":"CONNECT","detail":"192.168.0.1:53"}
+{"ts":6296.746250,"pid":11761,"ppid":11071,"uid":1000,"comm":"curl","type":"CONNECT","detail":"104.20.23.154:80"}
+{"ts":6296.746258,"pid":11761,"ppid":11071,"uid":1000,"comm":"curl","type":"CONNECT","detail":"172.66.147.243:80"}
+{"ts":6296.746264,"pid":11761,"ppid":11071,"uid":1000,"comm":"curl","type":"CONNECT","detail":"[2606:4700:10:0:0:0:ac42:93f3]:80"}
+{"ts":6296.746276,"pid":11761,"ppid":11071,"uid":1000,"comm":"curl","type":"CONNECT","detail":"[2606:4700:10:0:0:0:6814:179a]:80"}
+{"ts":6296.746548,"pid":11761,"ppid":11071,"uid":1000,"comm":"curl","type":"CONNECT","detail":"104.20.23.154:80"}
+{"ts":6296.829208,"pid":11761,"ppid":11071,"uid":1000,"comm":"curl","type":"OPEN","detail":"/dev/null"}
+{"ts":6296.830840,"pid":11071,"ppid":11005,"uid":1000,"comm":"bash","type":"OPEN","detail":"/tmp/lab_a.txt"}
+{"ts":6296.831478,"pid":11763,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/chmod"}
+{"ts":6296.833176,"pid":11763,"ppid":11071,"uid":1000,"comm":"chmod","type":"CHMOD","detail":"/tmp/lab_a.txt mode=0644"}
+{"ts":6296.833912,"pid":11764,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/mv"}
+{"ts":6296.835815,"pid":11764,"ppid":11071,"uid":1000,"comm":"mv","type":"RENAME","detail":"/tmp/lab_a.txt -> /tmp/lab_b.txt"}
+{"ts":6296.836673,"pid":11765,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/rm"}
+{"ts":6296.838315,"pid":11765,"ppid":11071,"uid":1000,"comm":"rm","type":"UNLINK","detail":"/tmp/lab_b.txt"}
+{"ts":6296.839213,"pid":11766,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/python3"}
+{"ts":6296.851687,"pid":11766,"ppid":11071,"uid":1000,"comm":"python3","type":"BIND","detail":"127.0.0.1:9999"}
+{"ts":6296.854615,"pid":11767,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/sudo"}
+{"ts":6296.856833,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/tty"}
+{"ts":6296.857643,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6296.857651,"pid":11767,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1"}
+{"ts":6296.857658,"pid":11767,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6296.857659,"pid":11767,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6296.857712,"pid":11767,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1"}
+{"ts":6296.857719,"pid":11767,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6296.857720,"pid":11767,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6296.857785,"pid":11767,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1000"}
+{"ts":6296.859967,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/run/sudo/ts/user"}
+{"ts":6296.860113,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=1000"}
+{"ts":6296.860116,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/home/user/.sudo_as_admin_successful"}
+{"ts":6296.860120,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6296.860121,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6296.860225,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/tty"}
+{"ts":6296.860233,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/ptmx"}
+{"ts":6296.860300,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/var/run/utmp"}
+{"ts":6296.860872,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6296.862128,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6296.862678,"pid":11769,"ppid":11768,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6296.862684,"pid":11769,"ppid":11768,"uid":0,"comm":"sudo","type":"EXEC","detail":"/usr/sbin/modprobe"}
+{"ts":6296.865235,"pid":11769,"ppid":11768,"uid":0,"comm":"modprobe","type":"MODULE","detail":"dummy.ko"}
+{"ts":6296.870490,"pid":290,"ppid":1,"uid":0,"comm":"systemd-udevd","type":"OPEN","detail":"/run/udev/queue"}
+{"ts":6296.870946,"pid":11770,"ppid":290,"uid":0,"comm":"systemd-udevd","type":"OPEN","detail":"/proc/self/oom_score_adj"}
+{"ts":6296.871469,"pid":11767,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/var/run/utmp"}
+{"ts":6296.871830,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6296.872101,"pid":11770,"ppid":290,"uid":0,"comm":"systemd-udevd","type":"UNLINK","detail":"/run/udev/data/+module:dummy"}
+{"ts":6296.872386,"pid":290,"ppid":1,"uid":0,"comm":"systemd-udevd","type":"UNLINK","detail":"/run/udev/queue"}
+{"ts":6296.873181,"pid":11771,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/python3"}
+{"ts":6297.191217,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfde0000 prot=r-x suppressed=8"}
+{"ts":6297.983251,"pid":11771,"ppid":11071,"uid":1000,"comm":"python3","type":"MPROTECT","detail":"addr=0x78d00da82000 prot=rwx suppressed=0"}
+{"ts":6297.986514,"pid":11772,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/sudo"}
+{"ts":6297.988818,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/tty"}
+{"ts":6297.989517,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6297.989525,"pid":11772,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1"}
+{"ts":6297.989533,"pid":11772,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6297.989534,"pid":11772,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6297.989585,"pid":11772,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1"}
+{"ts":6297.989591,"pid":11772,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6297.989592,"pid":11772,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6297.989654,"pid":11772,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1000"}
+{"ts":6297.991772,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/run/sudo/ts/user"}
+{"ts":6297.991913,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=1000"}
+{"ts":6297.991916,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/home/user/.sudo_as_admin_successful"}
+{"ts":6297.991919,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6297.991921,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6297.992034,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/tty"}
+{"ts":6297.992042,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/ptmx"}
+{"ts":6297.992110,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/var/run/utmp"}
+{"ts":6297.993176,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6297.993445,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6297.993688,"pid":11774,"ppid":11773,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6297.993698,"pid":11774,"ppid":11773,"uid":0,"comm":"sudo","type":"EXEC","detail":"/usr/sbin/modprobe"}
+{"ts":6298.007783,"pid":290,"ppid":1,"uid":0,"comm":"systemd-udevd","type":"OPEN","detail":"/run/udev/queue"}
+{"ts":6298.007865,"pid":11770,"ppid":290,"uid":0,"comm":"systemd-udevd","type":"UNLINK","detail":"/run/udev/data/+module:dummy"}
+{"ts":6298.008296,"pid":290,"ppid":1,"uid":0,"comm":"systemd-udevd","type":"UNLINK","detail":"/run/udev/queue"}
+{"ts":6298.019645,"pid":11772,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/var/run/utmp"}
+{"ts":6298.019806,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6299.252190,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdd6000 prot=r-x suppressed=16"}
+{"ts":6299.847425,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6304.685853,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6306.956417,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdd7000 prot=r-x suppressed=113"}
+{"ts":6308.282640,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdeb000 prot=r-x suppressed=9"}
+{"ts":6308.395221,"pid":1996,"ppid":1395,"uid":1000,"comm":"DNS Res~er #228","type":"CONNECT","detail":"127.0.0.53:53"}
+{"ts":6308.395781,"pid":1996,"ppid":1395,"uid":1000,"comm":"DNS Res~er #227","type":"CONNECT","detail":"127.0.0.53:53"}
+{"ts":6308.395829,"pid":454,"ppid":1,"uid":101,"comm":"systemd-resolve","type":"CONNECT","detail":"192.168.0.1:53"}
+{"ts":6308.397240,"pid":1996,"ppid":1395,"uid":1000,"comm":"DNS Res~er #229","type":"CONNECT","detail":"127.0.0.53:53"}
+{"ts":6308.980764,"pid":454,"ppid":1,"uid":101,"comm":"systemd-resolve","type":"CONNECT","detail":"192.168.0.1:53"}
+{"ts":6309.036287,"pid":569,"ppid":1,"uid":0,"comm":"NetworkManager","type":"CONNECT","detail":"91.189.91.62:80"}
+{"ts":6309.498543,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6309.732046,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdc7000 prot=r-x suppressed=149"}
+{"ts":6311.004912,"pid":569,"ppid":1,"uid":0,"comm":"NetworkManager","type":"OPEN","detail":"/var/lib/NetworkManager/timestamps.ACYBY3"}
+{"ts":6311.012827,"pid":569,"ppid":1,"uid":0,"comm":"NetworkManager","type":"RENAME","detail":"/var/lib/NetworkManager/timestamps.ACYBY3 -> /var/lib/NetworkManager/timestamps"}
+{"ts":6312.598656,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdf6000 prot=r-x suppressed=0"}
+{"ts":6313.848585,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6317.981235,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfde7000 prot=r-x suppressed=9"}
+{"ts":6319.041879,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6322.257974,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6440.988575,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfdd7000 prot=r-x suppressed=0"}
+{"ts":6442.468704,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfde6000 prot=r-x suppressed=2"}
+{"ts":6442.943881,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"OPEN","detail":"/home/user/.local/share/gnome-shell/application_state"}
+{"ts":6442.943899,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"OPEN","detail":"/home/user/.local/share/gnome-shell/application_state"}
+{"ts":6442.943914,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"OPEN","detail":"/home/user/.local/share/gnome-shell/.goutputstream-9SLAY3"}
+{"ts":6442.943968,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"CHMOD","detail":".goutputstream-9SLAY3 mode=0664"}
+{"ts":6442.950461,"pid":1395,"ppid":1235,"uid":1000,"comm":"pool-gnome-shel","type":"RENAME","detail":"/home/user/.local/share/gnome-shell/.goutputstream-9SLAY3 -> /home/user/.local/share/gnome-shell/application_state"}
+{"ts":6443.756080,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfe2b000 prot=r-x suppressed=121"}
+{"ts":6444.568058,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6445.007893,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfe2c000 prot=r-x suppressed=5"}
+{"ts":6446.326218,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfe34000 prot=r-x suppressed=52"}
+{"ts":6448.047427,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfe35000 prot=r-x suppressed=4"}
+{"ts":6448.826108,"pid":11830,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/sleep"}
+{"ts":6448.826772,"pid":11831,"ppid":11071,"uid":1000,"comm":"bash","type":"EXEC","detail":"/usr/bin/sudo"}
+{"ts":6448.829005,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/tty"}
+{"ts":6448.829711,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6448.829719,"pid":11831,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1"}
+{"ts":6448.829728,"pid":11831,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6448.829729,"pid":11831,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6448.829783,"pid":11831,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1"}
+{"ts":6448.829789,"pid":11831,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6448.829791,"pid":11831,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=0"}
+{"ts":6448.829856,"pid":11831,"ppid":11071,"uid":0,"comm":"sudo","type":"SETUID","detail":"old_uid=0 new_uid=1000"}
+{"ts":6448.832179,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/run/sudo/ts/user"}
+{"ts":6448.832325,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=1000"}
+{"ts":6448.832328,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/home/user/.sudo_as_admin_successful"}
+{"ts":6448.832331,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6448.832332,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6448.833743,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/tty"}
+{"ts":6448.833754,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/dev/ptmx"}
+{"ts":6448.833826,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/var/run/utmp"}
+{"ts":6448.834102,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6448.838208,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6448.838752,"pid":11833,"ppid":11832,"uid":1000,"comm":"sudo","type":"SETUID","detail":"old_uid=1000 new_uid=0"}
+{"ts":6448.838761,"pid":11833,"ppid":11832,"uid":0,"comm":"sudo","type":"EXEC","detail":"/usr/bin/timeout"}
+{"ts":6448.841761,"pid":11834,"ppid":11833,"uid":0,"comm":"timeout","type":"EXEC","detail":"/usr/local/sbin/strace"}
+{"ts":6448.841782,"pid":11834,"ppid":11833,"uid":0,"comm":"timeout","type":"EXEC","detail":"/usr/local/bin/strace"}
+{"ts":6448.841787,"pid":11834,"ppid":11833,"uid":0,"comm":"timeout","type":"EXEC","detail":"/usr/sbin/strace"}
+{"ts":6448.841828,"pid":11834,"ppid":11833,"uid":0,"comm":"timeout","type":"EXEC","detail":"/usr/bin/strace"}
+{"ts":6448.866720,"pid":11834,"ppid":11833,"uid":0,"comm":"strace","type":"PTRACE","detail":"target_pid=11835"}
+{"ts":6448.869519,"pid":11834,"ppid":11833,"uid":0,"comm":"strace","type":"OPEN","detail":"/dev/null"}
+{"ts":6448.869566,"pid":11834,"ppid":11833,"uid":0,"comm":"strace","type":"PTRACE","detail":"target_pid=11830"}
+{"ts":6449.561175,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6450.317688,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfe36000 prot=r-x suppressed=8"}
+{"ts":6450.348428,"pid":1996,"ppid":1395,"uid":1000,"comm":"firefox","type":"MPROTECT","detail":"addr=0x2537a5c38000 prot=r-x suppressed=0"}
+{"ts":6451.853500,"pid":11831,"ppid":11071,"uid":1000,"comm":"sudo","type":"OPEN","detail":"/var/run/utmp"}
+{"ts":6451.853927,"pid":242,"ppid":1,"uid":0,"comm":"systemd-journal","type":"OPEN","detail":"/run/log/journal/70273afdf6e34778bca1de19a64390ec/system.journal"}
+{"ts":6454.457591,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6455.748310,"pid":1996,"ppid":1395,"uid":1000,"comm":"firefox","type":"MPROTECT","detail":"addr=0x2537a5c3a000 prot=r-x suppressed=0"}
+{"ts":6458.893662,"pid":1259,"ppid":1235,"uid":1000,"comm":"dbus-daemon","type":"OPEN","detail":"/sys/kernel/security/apparmor/.access"}
+{"ts":6459.116146,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfe36000 prot=r-x suppressed=13"}
+{"ts":6460.166604,"pid":1395,"ppid":1235,"uid":1000,"comm":"gnome-shell","type":"MPROTECT","detail":"addr=0x35dacfe50000 prot=r-x suppressed=79"}
