@@ -1,6 +1,6 @@
 # ebpf-hids
 
-Host intrusion detection on eBPF. Five layers, one repo. Only the L1 sensor is in here so far.
+Host intrusion detection on eBPF. Five layers, one repo. The L1 sensor and the L2 detection engine are in here so far.
 
 ## Building the L1 sensor (Linux only)
 
@@ -33,3 +33,21 @@ Build and run it (not built by plain make):
     sudo ./loader/ips_enforce <pid-to-protect>
 
 While running, any ptrace against that pid is denied with EPERM, including as root, and a BLOCK line is printed. Ctrl+C disables it. With no pid configured it denies nothing.
+
+## L2 detection engine (Python, any OS)
+
+Python 3.10 or newer. From the repo root:
+
+    python3 -m venv .venv
+    . .venv/bin/activate            (Windows PowerShell: .venv\Scripts\Activate.ps1)
+    pip install -r requirements.txt
+    python -m pytest
+    python -m server.ingest tests/data/mock_events.jsonl
+
+The last command replays a hand-written file in the sensor's format and prints one JSON alert per line. Counts go to stderr.
+
+Live, on the Linux VM, from the repo root with the venv active:
+
+    sudo ./loader/loader | python -m server.ingest
+
+Only the loader needs root. Rules live in server/rules/*.yml and are loaded at start; a rule with a typo is skipped and reported, the others still load. Rule layer numbers and how they were measured are in docs/results.md.

@@ -1,4 +1,4 @@
-TECHNIQUE_CATALOGUE = {
+TECHNIQUES = {
     "T1071": {"name": "Application Layer Protocol", "tactic": "Command and Control"},
     "T1059": {"name": "Command and Scripting Interpreter", "tactic": "Execution"},
     "T1055": {"name": "Process Injection", "tactic": "Defense Evasion"},
@@ -11,38 +11,31 @@ TECHNIQUE_CATALOGUE = {
 }
 
 
-def coverage(engine):
-    """
-    প্রতিটা catalogue-এর technique-এর জন্য, এই session-এ কতগুলো alert
-    সেই technique ব্যবহার করে ফায়ার করেছে সেটা গোনে।
-    """
-    counts = {tid: 0 for tid in TECHNIQUE_CATALOGUE}
+def tactic_for(technique):
+    info = TECHNIQUES.get(technique)
+    return info["tactic"] if info else None
 
-    for alert in engine.alerts:
-        tid = alert.get("technique")
-        if tid in counts:
-            counts[tid] += 1
 
-    result = []
-    for tid, info in TECHNIQUE_CATALOGUE.items():
-        result.append({
+def coverage(technique_counts):
+    rows = []
+    for tid, info in TECHNIQUES.items():
+        count = technique_counts.get(tid, 0)
+        rows.append({
             "technique": tid,
             "name": info["name"],
             "tactic": info["tactic"],
-            "alert_count": counts[tid],
-            "covered": counts[tid] > 0,
+            "alert_count": count,
+            "covered": count > 0,
         })
+    return rows
 
-    return result
 
-
-def summary(engine):
-    rows = coverage(engine)
-    total = len(rows)
+def summary(technique_counts):
+    rows = coverage(technique_counts)
     covered = sum(1 for r in rows if r["covered"])
     return {
-        "total_techniques": total,
+        "total_techniques": len(rows),
         "covered_techniques": covered,
-        "coverage_pct": round(100 * covered / total, 1) if total > 0 else 0.0,
+        "coverage_pct": round(100 * covered / len(rows), 1),
         "rows": rows,
     }

@@ -1,154 +1,170 @@
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
-
-from engine import Engine
+from server.engine import Engine
 
 
-# ---------- 1. ransomware_burst (T1486) ----------
+def ev(ts, pid, ppid, comm, typ, detail, uid=1000):
+    return {"ts": ts, "pid": pid, "ppid": ppid, "uid": uid, "comm": comm, "type": typ, "detail": detail}
+
+
+def fired(eng, events):
+    for e in events:
+        eng.process_event(e)
+    return [a["rule"] for a in eng.alerts]
+
 
 def test_ransomware_burst_positive():
-    eng = Engine()
-    for i in range(9):
-        eng.process_event({"ts": i * 0.5, "pid": 1040, "ppid": 1, "uid": 1000, "comm": "enc", "type": "UNLINK", "detail": f"/home/f{i}.txt"})
-    rule_ids = [a["rule"] for a in eng.alerts]
-    assert "ransomware_burst" in rule_ids
+    events = [ev(i * 0.1, 1040, 1, "enc", "RENAME", f"/home/u/f{i} -> /home/u/f{i}.locked") for i in range(30)]
+    assert "ransomware_burst" in fired(Engine(), events)
 
 
 def test_ransomware_burst_negative_slow_deletes():
-    eng = Engine()
-    for i in range(9):
-        eng.process_event({"ts": i * 10.0, "pid": 2040, "ppid": 1, "uid": 1000, "comm": "cleanup", "type": "UNLINK", "detail": f"/tmp/old{i}.txt"})
-    rule_ids = [a["rule"] for a in eng.alerts]
-    assert "ransomware_burst" not in rule_ids
+    events = [ev(i * 10.0, 2040, 1, "cleanup", "UNLINK", f"/tmp/old{i}") for i in range(40)]
+    assert "ransomware_burst" not in fired(Engine(), events)
 
 
-# ---------- 2. log_tampering (T1070) ----------
+def test_ransomware_burst_negative_firefox_measured_burst():
+    events = [ev(400.0 + i * 0.003, 2041, 1, "firefox", "RENAME", f"/home/u/.mozilla/s{i}.tmp -> /home/u/.mozilla/s{i}") for i in range(8)]
+    assert "ransomware_burst" not in fired(Engine(), events)
+
 
 def test_log_tampering_positive():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1050, "ppid": 0, "uid": 0, "comm": "attacker", "type": "UNLINK", "detail": "/var/log/auth.log"})
-    assert any(a["rule"] == "log_tampering" for a in alerts)
+    assert "log_tampering" in fired(Engine(), [ev(1.0, 1050, 1, "bash", "UNLINK", "/var/log/auth.log", uid=0)])
 
 
-def test_log_tampering_negative():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2050, "ppid": 0, "uid": 1000, "comm": "app", "type": "OPEN", "detail": "/home/user/notes.txt"})
-    assert not any(a["rule"] == "log_tampering" for a in alerts)
+def test_log_tampering_negative_not_a_log_path():
+    assert "log_tampering" not in fired(Engine(), [ev(1.0, 2050, 1, "app", "OPEN", "/home/user/notes.txt")])
 
 
-# ---------- 3. persistence_autostart (T1547) ----------
+def test_log_tampering_negative_rsyslog_thread():
+    assert "log_tampering" not in fired(Engine(), [ev(1.0, 600, 1, "rs:main Q:Reg", "OPEN", "/var/log/syslog", uid=104)])
+
 
 def test_persistence_autostart_positive():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1060, "ppid": 0, "uid": 0, "comm": "malware", "type": "OPEN", "detail": "/etc/cron.d/evil"})
-    assert any(a["rule"] == "persistence_autostart" for a in alerts)
+    assert "persistence_autostart" in fired(Engine(), [ev(1.0, 1060, 1, "bash", "OPEN", "/etc/cron.d/evil", uid=0)])
 
 
-def test_persistence_autostart_negative():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2060, "ppid": 0, "uid": 1000, "comm": "app", "type": "OPEN", "detail": "/home/user/notes.txt"})
-    assert not any(a["rule"] == "persistence_autostart" for a in alerts)
+def test_persistence_autostart_positive_atomic_rename_into_place():
+    events = [ev(1.0, 1061, 1, "bash", "RENAME", "/tmp/x.service -> /etc/systemd/system/x.service", uid=0)]
+    assert "persistence_autostart" in fired(Engine(), events)
 
 
-# ---------- 4. credential_access (T1003) ----------
+def test_persistence_autostart_negative_systemd_runtime_files():
+    events = [
+        ev(1.0, 1, 0, "systemd", "OPEN", "/run/systemd/units/invocation:cron.service", uid=0),
+        ev(2.0, 1, 0, "systemd", "OPEN", "/var/lib/systemd/timers/stamp-apt-daily.timer", uid=0),
+        ev(3.0, 2060, 1, "cat", "OPEN", "/var/log/cron.log", uid=0),
+    ]
+    assert "persistence_autostart" not in fired(Engine(), events)
+
 
 def test_credential_access_positive():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1070, "ppid": 0, "uid": 1000, "comm": "cat", "type": "OPEN", "detail": "/etc/shadow"})
-    assert any(a["rule"] == "credential_access" for a in alerts)
+    assert "credential_access" in fired(Engine(), [ev(1.0, 1070, 1, "bash", "OPEN", "/etc/shadow", uid=0)])
 
 
-def test_credential_access_negative():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2070, "ppid": 0, "uid": 1000, "comm": "cat", "type": "OPEN", "detail": "/etc/hostname"})
-    assert not any(a["rule"] == "credential_access" for a in alerts)
+def test_credential_access_negative_lookalike_paths():
+    events = [
+        ev(1.0, 2070, 1, "cat", "OPEN", "/etc/hostname"),
+        ev(2.0, 2071, 1, "ss-local", "OPEN", "/tmp/shadowsocks.json"),
+        ev(3.0, 2072, 1, "ssh-keygen", "OPEN", "/home/u/.ssh/id_ed25519"),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
 
 
-# ---------- 5. suid_backdoor (T1548) ----------
-
-def test_suid_backdoor_positive():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1080, "ppid": 0, "uid": 0, "comm": "chmod", "type": "CHMOD", "detail": "/tmp/x mode=4755"})
-    assert any(a["rule"] == "suid_backdoor" for a in alerts)
+def test_suid_backdoor_positive_setuid_and_setgid():
+    events = [
+        ev(1.0, 1080, 1, "chmod", "CHMOD", "/tmp/x mode=4755", uid=0),
+        ev(2.0, 1081, 1, "chmod", "CHMOD", "/tmp/y mode=2755", uid=0),
+    ]
+    assert fired(Engine(), events).count("suid_backdoor") == 2
 
 
 def test_suid_backdoor_negative():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2080, "ppid": 0, "uid": 0, "comm": "chmod", "type": "CHMOD", "detail": "/tmp/x mode=0755"})
-    assert not any(a["rule"] == "suid_backdoor" for a in alerts)
+    events = [
+        ev(1.0, 2080, 1, "chmod", "CHMOD", "/tmp/x mode=0755", uid=0),
+        ev(2.0, 2081, 1, "chmod", "CHMOD", "/tmp mode=1777", uid=0),
+    ]
+    assert "suid_backdoor" not in fired(Engine(), events)
 
-
-# ---------- 6. world_writable_sensitive (T1222) ----------
 
 def test_world_writable_sensitive_positive():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1090, "ppid": 0, "uid": 0, "comm": "chmod", "type": "CHMOD", "detail": "/etc/passwd mode=0666"})
-    assert any(a["rule"] == "world_writable_sensitive" for a in alerts)
+    assert "world_writable_sensitive" in fired(Engine(), [ev(1.0, 1090, 1, "chmod", "CHMOD", "/etc/passwd mode=0666", uid=0)])
 
 
 def test_world_writable_sensitive_negative():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2090, "ppid": 0, "uid": 0, "comm": "chmod", "type": "CHMOD", "detail": "/etc/passwd mode=0644"})
-    assert not any(a["rule"] == "world_writable_sensitive" for a in alerts)
+    assert "world_writable_sensitive" not in fired(Engine(), [ev(1.0, 2090, 1, "chmod", "CHMOD", "/etc/passwd mode=0644", uid=0)])
 
-
-# ---------- 7. code_injection_rwx (T1055) ----------
 
 def test_code_injection_rwx_positive():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1100, "ppid": 0, "uid": 1000, "comm": "malware", "type": "MPROTECT", "detail": "addr=0x7f0000 prot=rwx"})
-    assert any(a["rule"] == "code_injection_rwx" for a in alerts)
+    events = [
+        ev(1.0, 1100, 1, "inj", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
+        ev(2.0, 1101, 1, "inj", "MPROTECT", "addr=0x7f1000 prot=-wx suppressed=0"),
+    ]
+    assert fired(Engine(), events).count("code_injection_rwx") == 2
 
 
-def test_code_injection_rwx_negative():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2100, "ppid": 0, "uid": 1000, "comm": "app", "type": "MPROTECT", "detail": "addr=0x7f0000 prot=rw"})
-    assert not any(a["rule"] == "code_injection_rwx" for a in alerts)
+def test_code_injection_rwx_negative_jit_flip():
+    assert "code_injection_rwx" not in fired(Engine(), [ev(1.0, 2100, 1, "gnome-shell", "MPROTECT", "addr=0x7f0000 prot=r-x suppressed=40")])
 
-
-# ---------- 8. kernel_module_load (T1547) ----------
 
 def test_kernel_module_load_positive():
     eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1110, "ppid": 0, "uid": 0, "comm": "insmod", "type": "MODULE", "detail": "evil.ko"})
-    assert any(a["rule"] == "kernel_module_load" for a in alerts)
-    fired = [a for a in alerts if a["rule"] == "kernel_module_load"][0]
-    assert fired["severity"] == "critical"
+    fired(eng, [ev(1.0, 1110, 1, "insmod", "MODULE", "evil.ko", uid=0)])
+    alert = [a for a in eng.alerts if a["rule"] == "kernel_module_load"][0]
+    assert alert["severity"] == "critical"
+
+
+def test_kernel_module_load_positive_from_memory():
+    assert "kernel_module_load" in fired(Engine(), [ev(1.0, 1111, 1, "x", "MODULE", "memory_image len=12345", uid=0)])
 
 
 def test_kernel_module_load_negative_no_module_event():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2110, "ppid": 0, "uid": 1000, "comm": "app", "type": "EXEC", "detail": "/usr/bin/app"})
-    assert not any(a["rule"] == "kernel_module_load" for a in alerts)
+    assert "kernel_module_load" not in fired(Engine(), [ev(1.0, 2110, 1, "app", "EXEC", "/usr/bin/app")])
 
 
-# ---------- 9. backdoor_listener (T1071) ----------
-
-def test_backdoor_listener_positive():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 1120, "ppid": 0, "uid": 0, "comm": "bash", "type": "BIND", "detail": "0.0.0.0:4444"})
-    assert any(a["rule"] == "backdoor_listener" for a in alerts)
+def test_backdoor_listener_positive_netcat_and_python():
+    events = [
+        ev(1.0, 1120, 1, "bash", "EXEC", "/usr/bin/nc.openbsd"),
+        ev(1.1, 1120, 1, "nc", "BIND", "0.0.0.0:4444"),
+        ev(2.0, 1121, 1, "python3", "BIND", "127.0.0.1:4445"),
+    ]
+    assert fired(Engine(), events).count("backdoor_listener") == 2
 
 
 def test_backdoor_listener_negative_normal_service():
-    eng = Engine()
-    alerts = eng.process_event({"ts": 1.0, "pid": 2120, "ppid": 0, "uid": 0, "comm": "nginx", "type": "BIND", "detail": "0.0.0.0:80"})
-    assert not any(a["rule"] == "backdoor_listener" for a in alerts)
+    assert "backdoor_listener" not in fired(Engine(), [ev(1.0, 2120, 1, "nginx", "BIND", "0.0.0.0:80", uid=0)])
 
 
-# ---------- 10. download_and_execute (T1059) ----------
+def test_download_and_execute_positive_two_processes():
+    events = [
+        ev(1.0, 1130, 1129, "bash", "EXEC", "/usr/bin/curl"),
+        ev(1.2, 1130, 1129, "curl", "CONNECT", "127.0.0.53:53"),
+        ev(1.3, 1130, 1129, "curl", "CONNECT", "93.184.216.34:80"),
+        ev(1.5, 1130, 1129, "curl", "OPEN", "/tmp/payload"),
+        ev(3.0, 1131, 1129, "bash", "EXEC", "/tmp/payload"),
+    ]
+    assert "download_and_execute" in fired(Engine(), events)
 
-def test_download_and_execute_positive():
-    eng = Engine()
-    eng.process_event({"ts": 1.0, "pid": 1130, "ppid": 0, "uid": 1000, "comm": "curl", "type": "CONNECT", "detail": "9.9.9.9:80"})
-    alerts = eng.process_event({"ts": 3.0, "pid": 1130, "ppid": 0, "uid": 1000, "comm": "curl", "type": "EXEC", "detail": "/tmp/payload"})
-    assert any(a["rule"] == "download_and_execute" for a in alerts)
+
+def test_download_and_execute_positive_file_opened_before_connect():
+    events = [
+        ev(1.0, 1132, 1, "wget", "OPEN", "/tmp/w"),
+        ev(1.2, 1132, 1, "wget", "CONNECT", "93.184.216.34:80"),
+        ev(4.0, 1133, 1, "bash", "EXEC", "/tmp/w"),
+    ]
+    assert "download_and_execute" in fired(Engine(), events)
 
 
-def test_download_and_execute_negative_not_tmp():
-    eng = Engine()
-    eng.process_event({"ts": 1.0, "pid": 2130, "ppid": 0, "uid": 1000, "comm": "apt", "type": "CONNECT", "detail": "8.8.8.8:80"})
-    alerts = eng.process_event({"ts": 3.0, "pid": 2130, "ppid": 0, "uid": 1000, "comm": "apt", "type": "EXEC", "detail": "/usr/bin/dpkg"})
-    assert not any(a["rule"] == "download_and_execute" for a in alerts)
+def test_download_and_execute_negative_file_written_offline():
+    events = [
+        ev(1.0, 2130, 1, "gcc", "OPEN", "/tmp/a.out"),
+        ev(2.0, 2131, 1, "bash", "EXEC", "/tmp/a.out"),
+    ]
+    assert "download_and_execute" not in fired(Engine(), events)
+
+
+def test_download_and_execute_negative_only_dns():
+    events = [
+        ev(1.0, 2132, 1, "make", "CONNECT", "127.0.0.53:53"),
+        ev(1.5, 2132, 1, "make", "OPEN", "/tmp/build/tool"),
+        ev(2.0, 2133, 1, "make", "EXEC", "/tmp/build/tool"),
+    ]
+    assert "download_and_execute" not in fired(Engine(), events)
