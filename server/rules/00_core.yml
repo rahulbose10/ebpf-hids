@@ -18,7 +18,7 @@ rules:
       # Interpreters (python3, perl, bash) are deliberately not listed.
       - field: proc.exe
         op: not_matches
-        value: '^(/usr)?/s?bin/(curl|wget|ping|ping6|git|ssh|scp|sftp|rsync|apt|apt-get|snap|dig|host|nslookup)$|^/usr/lib/(apt/methods|git-core)/|^/snap/|^/usr/lib/snapd/'
+        value: '^(/usr)?/s?bin/(curl|wget|ping|ping6|git|ssh|scp|sftp|rsync|apt|apt-get|snap|dig|host|nslookup)$|^/usr/lib/(apt/methods|git-core)/|^/snap/|^/usr/lib/snapd/|^/usr/lib/(thunderbird|firefox)/'
 
   - id: network_parent_shell
     technique: T1059
@@ -53,12 +53,14 @@ rules:
   - id: suid_shell
     technique: T1548
     severity: high
-    description: "Process changed uid and started a shell within 3 s (possible privilege escalation)"
+    description: "Process went from a normal uid to root and started a shell within 3 s (possible privilege escalation)"
     where:
       - field: evt.type
         op: eq
         value: EXEC
-      - field: proc.setuid_count
+      # root_gain_count, not setuid_count: cron setting uid 0 -> 0 before
+      # running /bin/sh -c for its hourly job raised this rule on the VM.
+      - field: proc.root_gain_count
         op: gte
         value: 1
       - field: since.setuid

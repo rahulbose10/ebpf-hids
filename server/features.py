@@ -8,6 +8,7 @@ COMM_LEN = 15
 DNS_PORT = 53
 
 _NEW_UID = re.compile(r"new_uid=(\d+)")
+_OLD_UID = re.compile(r"old_uid=(\d+)")
 _PROT = re.compile(r"prot=([r-])([w-])([x-])")
 
 # Deletes and renames that a normal desktop does in bursts on its own.
@@ -62,6 +63,10 @@ class ProcessState:
         self.file_write_count = 0
         self.ptrace_count = 0
         self.setuid_count = 0
+        # setuid calls that went from a non-root uid to 0. cron and other
+        # root daemons call setuid(0) while already root before running a
+        # job; that is not an escalation and must not count here.
+        self.root_gain_count = 0
         self.unlink_count = 0
         self.rename_count = 0
         self.mprotect_exec_count = 0
@@ -157,6 +162,9 @@ class ProcessState:
             found = _NEW_UID.search(detail)
             if found and int(found.group(1)) == 0:
                 self.ran_as_root = True
+                old = _OLD_UID.search(detail)
+                if old is None or int(old.group(1)) != 0:
+                    self.root_gain_count += 1
         elif etype == "UNLINK":
             self.unlink_count += 1
             if not is_routine_churn(detail):

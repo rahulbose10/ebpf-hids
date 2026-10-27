@@ -103,3 +103,13 @@ def test_lifetime_and_process_dict_keys():
         "ptrace_count", "setuid_count", "destruction_count", "module_count", "bind_count",
         "mprotect_exec_count", "ran_as_root", "depth", "lifetime_s",
     }
+
+
+def test_root_gain_counts_only_non_root_to_root():
+    p = ProcessState(pid=1, ppid=0, comm="x", uid=0)
+    p.update(ev(1.0, "SETUID", "old_uid=0 new_uid=0"))
+    p.update(ev(2.0, "SETUID", "old_uid=0 new_uid=1000"))
+    assert p.root_gain_count == 0
+    p.update(ev(3.0, "SETUID", "old_uid=1000 new_uid=0"))
+    assert p.root_gain_count == 1
+    assert p.setuid_count == 3

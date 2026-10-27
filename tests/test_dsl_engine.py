@@ -334,6 +334,7 @@ def test_connect_after_exec_negative_normal_network_clients():
         ("/usr/lib/apt/methods/https", "91.189.91.46:443"),
         ("/usr/lib/git-core/git-remote-https", "140.82.112.3:443"),
         ("/snap/thunderbird/700/thunderbird-bin", "54.192.151.117:443"),
+        ("/usr/lib/thunderbird/thunderbird", "54.192.151.105:443"),
     ]:
         assert started_then_connected(exe, dst) == [], exe
 
@@ -344,3 +345,26 @@ def test_connect_after_exec_positive_copied_client_outside_system_dirs():
 
 def test_connect_after_exec_positive_interpreter_one_liner():
     assert started_then_connected("/usr/bin/python3", "127.0.0.1:4444") == ["connect_after_exec"]
+
+
+# Second VM idle run (2026-10-27): cron's hourly job at minute 17 raised
+# suid_shell. cron is already root, so its setuid before /bin/sh -c is 0 -> 0.
+
+def test_suid_shell_negative_cron_root_job():
+    eng = Engine()
+    eng.process_event(ev(1100.9, 5825, 5824, "cron", "SETUID", "old_uid=0 new_uid=0", uid=0))
+    assert eng.process_event(ev(1100.96, 5825, 5824, "cron", "EXEC", "/bin/sh", uid=0)) == []
+
+
+def test_suid_shell_negative_cron_user_job_drops_privilege():
+    eng = Engine()
+    eng.process_event(ev(1.0, 5830, 5824, "cron", "SETUID", "old_uid=0 new_uid=1000", uid=0))
+    assert eng.process_event(ev(1.05, 5830, 5824, "cron", "EXEC", "/bin/sh", uid=1000)) == []
+
+
+def test_suid_shell_positive_root_gain_after_an_earlier_root_to_root_call():
+    eng = Engine()
+    eng.process_event(ev(1.0, 5840, 1, "x", "SETUID", "old_uid=1000 new_uid=0"))
+    eng.process_event(ev(1.1, 5840, 1, "x", "SETUID", "old_uid=0 new_uid=0", uid=0))
+    alerts = eng.process_event(ev(1.2, 5840, 1, "x", "EXEC", "/bin/bash", uid=0))
+    assert [a["rule"] for a in alerts] == ["suid_shell"]

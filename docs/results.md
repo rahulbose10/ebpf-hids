@@ -70,9 +70,29 @@ connect_after_exec now skips a short list of network clients matched on the full
 
 What this costs: curl or wget used as a C2 channel no longer trips connect_after_exec. download_and_execute still catches curl writing a file that then gets run.
 
-### Idle run after tuning
+### Idle run after tuning (2026-10-27, 20:02 to 20:17)
 
-TODO: repeat the same 15 minutes with the tuned rules and paste the per-rule counts here.
+Same kind of use: Firefox, Thunderbird, ping, curl, wget, sudo apt update twice, git status, pytest. No attack sims. The VM had been rebooted in between, so the two runs are not the same workload and the drop is not all down to the tuning. What is certain is that the shapes that fired in the first run did not fire again.
+
+    ingest: 5794 events, 2 alerts, 0 bad lines, 0 engine errors
+          1 suid_shell
+          1 connect_after_exec
+
+connect_after_exec fired on Thunderbird starting up. It runs from /usr/lib/thunderbird/thunderbird (the deb, not the snap), which the client list did not cover.
+
+suid_shell fired at 20:17 on `cron` running `/bin/sh`, uid 0. Ubuntu's /etc/crontab runs cron.hourly at minute 17. cron is already root, so the uid change before /bin/sh -c is root to root, not an escalation. The rule counted any setuid call.
+
+### Second round of tuning
+
+suid_shell now needs proc.root_gain_count, which only counts a setuid that moved from a non-root uid to 0. cron's 0 to 0 and 0 to 1000 calls no longer count. setuid_count is unchanged and still counts every call.
+
+/usr/lib/thunderbird/ and /usr/lib/firefox/ added to the connect_after_exec client list.
+
+Not yet seen on the real host: the SETUID event cron emits right before the shell. The 0 to 0 shape is inferred from cron running as root, not read off a captured line.
+
+### Idle run after the second round
+
+TODO: repeat the 15 minutes, spanning minute 17 of an hour so cron.hourly runs inside the window, and paste the per-rule counts here.
 
 ## Known blind spots
 

@@ -80,6 +80,8 @@ def benign():
     yield [ev(t + 23 + i * 0.02, 1025, 1000, "apt", "UNLINK", f"/var/lib/apt/lists/archive_part{i}", uid=0) for i in range(40)]
     yield [ev(t + 24 + i * 0.02, 1026, 1, "dpkg", "UNLINK", f"/usr/share/doc/p{i}/changelog.Debian.gz.dpkg-tmp", uid=0) for i in range(40)]
     yield [ev(t + 25 + i * 0.02, 1027, 999, "thunderbird", "UNLINK", f"/home/u/.thunderbird/p.default/db{i}.sqlite-journal") for i in range(40)]
+    yield [ev(t + 27, 1029, 1395, "thunderbird", "EXEC", "/usr/lib/thunderbird/thunderbird"), ev(t + 27.3, 1029, 1395, "thunderbird", "CONNECT", "54.192.151.105:443")]
+    yield [ev(t + 28, 1030, 1031, "cron", "SETUID", "old_uid=0 new_uid=0", uid=0), ev(t + 28.06, 1030, 1031, "cron", "EXEC", "/bin/sh", uid=0)]
     yield [ev(t + 26 + i * 0.02, 1028, 999, "firefox", "RENAME", "/home/u/snap/firefox/common/.mozilla/firefox/s1xd0i8j.defau -> /home/u/snap/firefox/common/.mozilla/firefox/s1xd0i8j.defau") for i in range(40)]
 
 
