@@ -1,17 +1,10 @@
-
 import { useMemo } from "react";
 import { api, usePoll } from "../api";
+import StatCard from "../components/StatCard";
 
-function StatCard({ label, value, detail, color = "text-text" }) {
-  return (
-    <section className="panel min-w-0 p-4">
-      <p className="eyebrow">{label}</p>
-      <p className={`stat-num mt-3 text-2xl ${color}`}>{value}</p>
-      {detail && <p className="mt-1 text-xs text-mute">{detail}</p>}
-    </section>
-  );
-}
-
+// /api/mitre is not in the frozen contract yet, so its shape is not agreed
+// with L4. Until it is, accept the shapes L4 is most likely to send. Once the
+// shape is fixed, delete the branches that are not used.
 function getTechniques(data) {
   if (Array.isArray(data?.techniques)) return data.techniques;
   if (Array.isArray(data?.coverage)) return data.coverage;
@@ -40,178 +33,132 @@ function getTactic(item) {
   return item.tactic ?? item.tactic_name ?? "Other techniques";
 }
 
+// A tile is shaded by its share of the busiest technique. Dark text on a
+// translucent tint stays readable, which white on yellow was not.
+function tileClass(count, max) {
+  if (count === 0) return "border-line bg-ink-800/60";
+  const share = count / max;
+  if (share >= 0.75) return "border-critical/60 bg-critical/25";
+  if (share >= 0.4) return "border-high/60 bg-high/25";
+  return "border-medium/60 bg-medium/20";
+}
+
 export default function AttackMap() {
   const { data, error } = usePoll(api.mitre, 5000);
 
   const techniques = useMemo(() => getTechniques(data), [data]);
 
   const summary = useMemo(() => {
-    const covered = techniques.filter((item) => getCount(item) > 0);
-    const totalAlerts = techniques.reduce(
-      (sum, item) => sum + getCount(item),
-      0
-    );
+    const alerted = techniques.filter((item) => getCount(item) > 0);
+    const totalAlerts = techniques.reduce((sum, item) => sum + getCount(item), 0);
     const tactics = new Set(
-      covered.map(getTactic).filter((name) => name !== "Other techniques")
+      alerted.map(getTactic).filter((name) => name !== "Other techniques")
     );
-
-    const busiest = [...techniques].sort(
-      (a, b) => getCount(b) - getCount(a)
-    )[0];
+    const busiest = [...techniques].sort((a, b) => getCount(b) - getCount(a))[0];
 
     return {
-      covered: covered.length,
+      alerted: alerted.length,
       totalAlerts,
       tactics: tactics.size,
-      busiest: busiest ? getId(busiest) : "—",
+      busiest: busiest && getCount(busiest) > 0 ? getId(busiest) : "-",
     };
   }, [techniques]);
 
   const groups = useMemo(() => {
     const result = {};
-
     techniques.forEach((item) => {
       const tactic = getTactic(item);
       if (!result[tactic]) result[tactic] = [];
       result[tactic].push(item);
     });
-
     return Object.entries(result);
   }, [techniques]);
 
   const maxAlerts = Math.max(1, ...techniques.map(getCount));
   const loading = !data && !error;
 
-  function heatColor(count) {
-    if (count === 0) return "border-line bg-ink-800";
-    if (count / maxAlerts >= 0.75) return "border-red-400/40 bg-red-500/90";
-    if (count / maxAlerts >= 0.4) return "border-orange-300/40 bg-orange-400/80";
-    return "border-yellow-300/40 bg-yellow-400/70";
-  }
-
   return (
-    <main className="min-h-full space-y-5 p-4 text-text sm:p-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div className="page-header flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="eyebrow">MITRE ATT&CK / COVERAGE MATRIX</p>
-          <h1 className="mt-2 font-display text-2xl font-semibold">
-            ATT&CK Navigator
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-mute">
-            Live ATT&CK coverage from this session, shaded by alert volume.
-            Uncovered techniques help identify possible detection gaps.
+          <div className="eyebrow">MITRE ATT&CK</div>
+          <h1>ATT&CK Navigator</h1>
+          <p>
+            Techniques from this session, shaded by alert volume. A grey tile means no alert fired
+            for that technique in this session. It does not prove there is no rule for it.
           </p>
         </div>
 
         <a
           href="/api/navigator/download"
-          className="rounded-md border border-line px-3 py-2 text-sm transition hover:border-signal hover:text-signal"
+          className="shrink-0 rounded border border-line px-3 py-1.5 text-[12px] transition hover:border-signal hover:text-signal"
         >
-          ↓ Download layer JSON
+          Download layer JSON
         </a>
-      </header>
+      </div>
 
       {error && (
-        <section className="panel border-red-500/40 p-4">
-          <p className="font-semibold text-red-400">
-            MITRE coverage data is currently unavailable
-          </p>
-          <p className="mt-2 text-sm text-mute">
-            The /api/mitre endpoint returned an error. Check its availability
-            with the backend team; this page does not change backend code.
-          </p>
-        </section>
+        <div className="mb-3 rounded border border-critical/45 bg-critical/10 px-3 py-2 font-mono text-[11px] text-critical">
+          Could not load /api/mitre. The endpoint may not exist yet on the backend.
+        </div>
       )}
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
-          label="TECHNIQUES DETECTED"
-          value={loading ? "…" : summary.covered}
-          detail="Techniques with alerts"
-          color="text-signal"
+          label="Techniques alerted"
+          value={loading ? "..." : summary.alerted}
+          sub="at least one alert"
+          tone="signal"
         />
+        <StatCard label="Alerts mapped" value={loading ? "..." : summary.totalAlerts} tone="high" />
+        <StatCard label="Tactics touched" value={loading ? "..." : summary.tactics} />
+        <StatCard label="Busiest technique" value={loading ? "..." : summary.busiest} tone="ml" />
+      </div>
 
-        <StatCard
-          label="ALERTS MAPPED"
-          value={loading ? "…" : summary.totalAlerts}
-        />
+      <div className="panel">
+        <div className="panel-label flex flex-wrap items-center justify-between gap-3">
+          <span>Technique alert distribution</span>
 
-        <StatCard
-          label="TACTICS TOUCHED"
-          value={loading ? "…" : summary.tactics}
-        />
-
-        <StatCard
-          label="BUSIEST TECHNIQUE"
-          value={loading ? "…" : summary.busiest}
-          detail="Highest alert count"
-          color="text-indigo-400"
-        />
-      </section>
-
-      <section className="panel overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
-          <div>
-            <p className="eyebrow">COVERAGE HEATMAP</p>
-            <h2 className="mt-1 text-sm font-semibold">
-              Technique alert distribution
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2 text-[10px] text-mute">
-            <span>fewer</span>
-            <span className="h-2 w-3 rounded-sm bg-ink-800" />
-            <span className="h-2 w-3 rounded-sm bg-yellow-400/70" />
-            <span className="h-2 w-3 rounded-sm bg-orange-400/80" />
-            <span className="h-2 w-3 rounded-sm bg-red-500/90" />
-            <span>more alerts</span>
-          </div>
+          <span className="flex items-center gap-2 normal-case tracking-normal">
+            <span>none</span>
+            <span className="h-2 w-3 rounded-sm border border-line bg-ink-800" />
+            <span className="h-2 w-3 rounded-sm border border-medium/60 bg-medium/20" />
+            <span className="h-2 w-3 rounded-sm border border-high/60 bg-high/25" />
+            <span className="h-2 w-3 rounded-sm border border-critical/60 bg-critical/25" />
+            <span>most</span>
+          </span>
         </div>
 
         {loading ? (
-          <p className="p-6 text-sm text-mute">
-            Loading ATT&CK techniques…
-          </p>
+          <p className="p-4 font-mono text-[12px] text-mute">Loading techniques...</p>
         ) : techniques.length === 0 ? (
-          <p className="p-6 text-sm text-mute">
-            No technique coverage data was returned by the API.
+          <p className="p-4 font-mono text-[12px] text-mute">
+            No technique data returned by /api/mitre.
           </p>
         ) : (
-          <div className="space-y-5 p-4 sm:p-5">
+          <div className="grid content-start gap-4 p-3 md:grid-cols-2 xl:grid-cols-3">
             {groups.map(([tactic, items]) => (
               <div key={tactic}>
-                <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-mute">
-                  {tactic}
-                </p>
+                <div className="eyebrow mb-1.5">{tactic}</div>
 
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-2">
                   {items.map((item, index) => {
                     const id = getId(item);
                     const count = getCount(item);
-                    const covered = count > 0;
 
                     return (
                       <div
                         key={`${id}-${index}`}
-                        className={`flex min-w-0 items-center justify-between gap-3 rounded border p-3 ${heatColor(count)}`}
+                        className={`flex min-w-0 items-center justify-between gap-3 rounded border px-2.5 py-2 ${tileClass(count, maxAlerts)}`}
                       >
                         <div className="min-w-0">
-                          <p className="font-mono text-xs font-semibold text-white">
-                            {id}
-                          </p>
-                          <p className="mt-1 break-words text-xs text-white/80">
-                            {item.name ??
-                              item.technique_name ??
-                              "Technique name unavailable"}
-                          </p>
-                          <p className="mt-2 text-[10px] uppercase tracking-wider text-white/70">
-                            {covered ? "Covered" : "Uncovered"}
-                          </p>
+                          <div className="font-mono text-[12px] font-semibold text-text">{id}</div>
+                          <div className="truncate text-[11px] text-mute" title={item.name ?? item.technique_name ?? ""}>
+                            {item.name ?? item.technique_name ?? "name not provided"}
+                          </div>
                         </div>
 
-                        <span className="font-mono text-sm font-semibold text-white">
-                          {count}
-                        </span>
+                        <span className="font-mono text-[13px] text-text">{count}</span>
                       </div>
                     );
                   })}
@@ -220,20 +167,12 @@ export default function AttackMap() {
             ))}
           </div>
         )}
-      </section>
+      </div>
 
-      <section className="panel p-4 sm:p-5">
-        <p className="eyebrow">HOW TO USE THE EXPORT</p>
-        <p className="mt-2 text-sm leading-6 text-mute">
-          Download the layer JSON, then open MITRE ATT&CK Navigator and use
-          “Open Existing Layer” to upload the downloaded file. The matrix
-          shows detected techniques and their alert counts.
-        </p>
-      </section>
-
-      <p className="text-xs text-mute">
-        DATA SOURCE: /api/mitre · Layer export: /api/navigator/download
+      <p className="mt-3 font-mono text-[10px] leading-relaxed text-mute">
+        Export: download the layer JSON, open MITRE ATT&CK Navigator, choose Open Existing Layer and
+        upload the file. Source: /api/mitre and /api/navigator/download.
       </p>
-    </main>
+    </div>
   );
 }
