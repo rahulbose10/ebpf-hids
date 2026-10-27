@@ -90,6 +90,23 @@ suid_shell now needs proc.root_gain_count, which only counts a setuid that moved
 
 Not yet seen on the real host: the SETUID event cron emits right before the shell. The 0 to 0 shape is inferred from cron running as root, not read off a captured line.
 
+### Attack tests on the VM (2026-10-27, about 20:32)
+
+Three harmless attacks against the live pipeline, everything on loopback or in /tmp, alerts shown with `jq -c`. The listener for the first one was `python3 -m http.server 4444 --bind 127.0.0.1`.
+
+    ingest: 394 events, 6 alerts, 0 bad lines, 0 engine errors
+
+    backdoor_listener     high      python3 BIND 127.0.0.1:4444 (the listener itself)
+    connect_after_exec    medium    python3 CONNECT 127.0.0.1:4444 (the client one-liner)
+    network_parent_shell  high      sh EXEC /bin/sh, parent had made the connection
+    suid_backdoor         high      chmod CHMOD /tmp/lab_sh mode=4755
+    ransomware_burst      critical  python3 RENAME /tmp/lab/f24 -> /tmp/lab/f24.locked
+    ransomware_burst      critical  rm UNLINK f2.locked (the cleanup, see below)
+
+All three attacks were caught on real sensor events. The listener and the client one-liner each raised an alert of their own as well, which is what those rules are written to do.
+
+The second ransomware_burst alert is `rm -rf /tmp/lab` deleting the 30 renamed files in under 5 seconds. It is the same rule doing what it says, but it means any ordinary `rm -rf` of a folder with 25 or more files will raise a critical alert. The idle runs did not include one, so the false alarm rate for that case is unmeasured. Note also that the path in that alert is `f2.locked`, not `/tmp/lab/f2.locked`: the sensor reports a relative path for unlinkat, so the routine churn exclusion cannot match it either.
+
 ### Idle run after the second round
 
 TODO: repeat the 15 minutes, spanning minute 17 of an hour so cron.hourly runs inside the window, and paste the per-rule counts here.
@@ -99,5 +116,7 @@ TODO: repeat the 15 minutes, spanning minute 17 of an hour so cron.hourly runs i
 credential_access can only see write-intent opens of /etc/shadow, because the sensor reports OPEN for writes only. Reading /etc/shadow, which is what credential dumping actually does, produces no event at all.
 
 Paths from unlinkat, renameat and fchmodat can be relative (for example `cd /var/log && rm auth.log` arrives as `auth.log`), so the path-anchored rules miss them.
+
+`rm -rf` of a folder holding 25 or more files inside 5 seconds raises ransomware_burst at critical severity. Nothing in the rule tells a cleanup from an encryptor except which paths are involved.
 
 Processes that started before the sensor have no EXEC event, so their exe_name falls back to comm, which can be a thread name.

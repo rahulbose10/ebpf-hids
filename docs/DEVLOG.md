@@ -279,3 +279,12 @@
   reorganization was purely structural (file location), not a functional change.
 - This closes the last known gap from the external review: rule count, file
   organization, and test coverage all now match the v6 prompt exactly.
+
+## 2026-10-27 - L2 detection engine, review, real sensor, tuning
+
+- Took the engine as delivered by Subhrajit, committed it under his name, then fixed it against docs/sensor-contract.md: imports from the repo root, EXEC comm being the parent's name, IPv6 and relative paths, bounded memory, rule loading that skips a bad rule instead of dying. 109 tests, then 124.
+- First live run through sudo ./loader/loader | python -m server.ingest: 286 events, 0 bad lines, 0 engine errors, 0 dropped. DNS lookups to 127.0.0.53:53 stay quiet.
+- 15 minute idle run with normal use: 9223 events, 14 alerts, all false. 8 connect_after_exec (curl, wget, ping, apt helpers, Thunderbird), 6 ransomware_burst (apt, dpkg, Firefox and Thunderbird profile churn). The other 12 rules were silent.
+- Tuned both rules from that run and ran it again: 5794 events, 2 alerts. Thunderbird again (it runs from /usr/lib/thunderbird, not /snap), and suid_shell on cron.hourly at minute 17, because the rule counted cron's root to root setuid. Fixed both. The two runs were not the same workload, so the drop is not all down to the tuning.
+- Three attack tests on the live sensor (reverse shell shape, chmod 4755, 30 fast renames): all caught. The cleanup rm -rf of those 30 files raised ransomware_burst too.
+- Still open: third idle run across minute 17 to confirm the cron fix on the real host. rm -rf of big folders will alert critical. credential_access cannot see reads of /etc/shadow because the sensor only reports write opens. Relative paths from unlinkat/renameat/fchmodat defeat the path rules.
