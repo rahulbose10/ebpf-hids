@@ -1,1093 +1,373 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { api, usePoll } from "../api";
+import SeverityChip from "../components/SeverityChip";
+import { formatKts } from "../format";
 
+// Spacing of the drawn tree, in SVG pixels.
+const NODE_GAP_X = 110;
+const LEVEL_GAP_Y = 96;
+const MARGIN_X = 60;
+const MARGIN_TOP = 52;
+const MARGIN_BOTTOM = 44;
 
-const REFRESH_MS = 5000;
-
-
-const SEVERITY = {
-  critical: {
-    color: "#ff5d5d",
-    glow: "rgba(255, 93, 93, 0.55)",
-  },
-  high: {
-    color: "#f2a65a",
-    glow: "rgba(242, 166, 90, 0.50)",
-  },
-  medium: {
-    color: "#e8c34a",
-    glow: "rgba(232, 195, 74, 0.45)",
-  },
-  low: {
-    color: "#39c2b0",
-    glow: "rgba(57, 194, 176, 0.40)",
-  },
+const SEVERITY_COLOR = {
+  critical: "#ff5d5d",
+  high: "#f2a65a",
+  medium: "#e8c34a",
+  low: "#39c2b0",
 };
 
+const SEVERITY_ORDER = { critical: 4, high: 3, medium: 2, low: 1 };
 
-function normaliseProcess(process) {
+// The stub backend sends name/user, the real process dict sends comm/uid.
+// Accept both so the page works against either until L4 replaces the stub.
+function normaliseProcess(p) {
+  const hasParent = p.ppid !== undefined && p.ppid !== null && p.ppid !== "";
   return {
-    ...process,
-
-    pid: Number(process.pid),
-    ppid:
-      process.ppid === undefined ||
-      process.ppid === null ||
-      process.ppid === ""
-        ? null
-        : Number(process.ppid),
-
-    comm:
-      process.comm ??
-      process.name ??
-      "unknown",
-
-    uid:
-      process.uid ??
-      process.user ??
-      "—",
-
-    depth:
-      process.depth === undefined ||
-      process.depth === null
-        ? 0
-        : Number(process.depth),
-
-    lifetime_s:
-      process.lifetime_s === undefined ||
-      process.lifetime_s === null
-        ? 0
-        : Number(process.lifetime_s),
-
+    ...p,
+    pid: Number(p.pid),
+    ppid: hasParent ? Number(p.ppid) : null,
+    comm: p.comm ?? p.name ?? "unknown",
+    uid: p.uid ?? p.user ?? "-",
+    lifetime_s: Number(p.lifetime_s) || 0,
     ran_as_root:
-      Boolean(
-        process.ran_as_root ??
-        process.user === "root"
-      ),
+      typeof p.ran_as_root === "boolean" ? p.ran_as_root : p.user === "root",
   };
 }
 
-
-function severityForProcess(pid, alerts) {
-  const processAlerts = alerts.filter(
-    (alert) => Number(alert.pid) === Number(pid)
-  );
-
-  if (!processAlerts.length) {
-    return null;
-  }
-
-  const order = {
-    critical: 4,
-    high: 3,
-    medium: 2,
-    low: 1,
-  };
-
-  return processAlerts.reduce((highest, alert) => {
-    const current = String(
-      alert.severity || "low"
-    ).toLowerCase();
-
-    if (!highest) {
-      return current;
+// Worst severity among all alerts of one pid, or null if it has none.
+// Built once for all pids so drawing N nodes does not filter the alert list N times.
+function worstSeverityByPid(alerts) {
+  const worst = new Map();
+  alerts.forEach((alert) => {
+    const pid = Number(alert.pid);
+    const level = String(alert.severity || "low").toLowerCase();
+    const current = worst.get(pid);
+    if (!current || (SEVERITY_ORDER[level] || 0) > (SEVERITY_ORDER[current] || 0)) {
+      worst.set(pid, level);
     }
-
-    return order[current] > order[highest]
-      ? current
-      : highest;
-  }, null);
+  });
+  return worst;
 }
 
-
+// Turn the flat process list into a forest. A process whose parent is not in
+// the list becomes a root. Any process left unreached (a ppid cycle) is also
+// promoted to a root, so it is never silently dropped from the picture.
 function buildTree(processes) {
   const byPid = new Map();
-
-  processes.forEach((process) => {
-    byPid.set(process.pid, {
-      ...process,
-      children: [],
-    });
-  });
+  processes.forEach((p) => byPid.set(p.pid, { ...p, children: [] }));
 
   const roots = [];
+  byPid.forEach((node) => {
+    const parent = node.ppid !== null && node.ppid !== node.pid ? byPid.get(node.ppid) : null;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  });
 
-  processes.forEach((process) => {
-    const node = byPid.get(process.pid);
-
-    if (
-      process.ppid !== null &&
-      byPid.has(process.ppid) &&
-      process.ppid !== process.pid
-    ) {
-      byPid
-        .get(process.ppid)
-        .children
-        .push(node);
-    } else {
+  const seen = new Set();
+  const mark = (node) => {
+    if (seen.has(node.pid)) return;
+    seen.add(node.pid);
+    node.children.forEach(mark);
+  };
+  roots.forEach(mark);
+  byPid.forEach((node) => {
+    if (!seen.has(node.pid)) {
       roots.push(node);
+      mark(node);
     }
   });
 
-  return {
-    roots,
-    byPid,
-  };
+  return roots;
 }
 
-
-function calculateSubtreeWidth(node) {
-  if (!node.children.length) {
-    return 1;
-  }
-
-  return node.children.reduce(
-    (total, child) =>
-      total + calculateSubtreeWidth(child),
-    0
-  );
-}
-
-
+// Leaves take the next free column. A parent sits in the middle of its first
+// and last child. Y comes from the real tree depth, not from process.depth,
+// so the picture is right even when the backend depth field is off.
 function layoutTree(roots) {
-  const NODE_GAP_X = 150;
-  const LEVEL_GAP_Y = 120;
-
   const positions = new Map();
+  let nextColumn = 0;
+  let deepest = 0;
 
-  let cursorX = 100;
+  function place(node, level) {
+    deepest = Math.max(deepest, level);
+    const y = MARGIN_TOP + level * LEVEL_GAP_Y;
 
-  function walk(node, depth) {
-    const subtreeWidth =
-      calculateSubtreeWidth(node);
-
-    const subtreePixelWidth =
-      subtreeWidth * NODE_GAP_X;
-
-    const children = node.children;
-
-    if (!children.length) {
-      const x = cursorX;
-
-      cursorX += NODE_GAP_X;
-
-      positions.set(node.pid, {
-        x,
-        y: 80 + depth * LEVEL_GAP_Y,
-      });
-
+    if (!node.children.length) {
+      positions.set(node.pid, { x: MARGIN_X + nextColumn * NODE_GAP_X, y });
+      nextColumn += 1;
       return;
     }
 
-    children.forEach((child) => {
-      walk(child, depth + 1);
-    });
-
-    const firstChild =
-      positions.get(children[0].pid);
-
-    const lastChild =
-      positions.get(
-        children[children.length - 1].pid
-      );
-
-    const childCenter =
-      (firstChild.x + lastChild.x) / 2;
-
-    positions.set(node.pid, {
-      x: childCenter,
-      y: 80 + depth * LEVEL_GAP_Y,
-    });
-
-    cursorX = Math.max(
-      cursorX,
-      childCenter + subtreePixelWidth * 0.05
-    );
+    node.children.forEach((child) => place(child, level + 1));
+    const first = positions.get(node.children[0].pid);
+    const last = positions.get(node.children[node.children.length - 1].pid);
+    positions.set(node.pid, { x: (first.x + last.x) / 2, y });
   }
 
   roots.forEach((root) => {
-    walk(root, 0);
-    cursorX += 70;
+    place(root, 0);
+    nextColumn += 0.5; // a small gap between separate trees
   });
 
-  return positions;
+  const width = MARGIN_X * 2 + Math.max(1, nextColumn - 1) * NODE_GAP_X;
+  const height = MARGIN_TOP + deepest * LEVEL_GAP_Y + MARGIN_BOTTOM;
+  return { positions, width, height };
 }
 
-
-function collectNodes(roots) {
+function flatten(roots) {
   const nodes = [];
-
-  function walk(node) {
-    nodes.push(node);
-
-    node.children.forEach(
-      (child) => walk(child)
-    );
-  }
-
-  roots.forEach((root) => walk(root));
-
-  return nodes;
-}
-
-
-function collectEdges(roots) {
   const edges = [];
-
-  function walk(node) {
+  const walk = (node) => {
+    nodes.push(node);
     node.children.forEach((child) => {
-      edges.push({
-        parent: node,
-        child,
-      });
-
+      edges.push({ parent: node, child });
       walk(child);
     });
-  }
-
-  roots.forEach((root) => walk(root));
-
-  return edges;
+  };
+  roots.forEach(walk);
+  return { nodes, edges };
 }
 
-
-function ProcessNode({
-  node,
-  position,
-  severity,
-  selected,
-  onSelect,
-}) {
-  const severityData =
-    severity
-      ? SEVERITY[severity]
-      : null;
-
-  const ringColor =
-    severityData?.color ||
-    "#243149";
-
-  const glow =
-    severityData?.glow ||
-    "rgba(0,0,0,0)";
+function ProcessNode({ node, position, severity, selected, onSelect }) {
+  const ring = severity ? SEVERITY_COLOR[severity] || SEVERITY_COLOR.low : "#243149";
+  const label = node.comm.length > 14 ? `${node.comm.slice(0, 13)}…` : node.comm;
 
   return (
     <g
       transform={`translate(${position.x}, ${position.y})`}
-      onClick={() => onSelect(node)}
-      style={{
-        cursor: "pointer",
-      }}
+      onClick={() => onSelect(node.pid)}
+      style={{ cursor: "pointer" }}
     >
-      {node.ran_as_root && (
-        <circle
-          r="29"
-          fill="none"
-          stroke="#ff5d5d"
-          strokeWidth="1.5"
-          strokeDasharray="4 4"
-          opacity="0.95"
-        />
-      )}
+      <title>{`${node.comm} (pid ${node.pid})`}</title>
 
-      {severity && (
-        <circle
-          r="25"
-          fill="none"
-          stroke={ringColor}
-          strokeWidth="5"
-          opacity="0.16"
-          style={{
-            filter: `drop-shadow(0 0 10px ${glow})`,
-          }}
-        />
+      {node.ran_as_root && (
+        <circle r="24" fill="none" stroke="#ff5d5d" strokeWidth="1.2" strokeDasharray="3 3" />
       )}
 
       <circle
-        r="20"
+        r="18"
         fill="#111a2b"
-        stroke={ringColor}
-        strokeWidth={
-          selected ? 2.5 : 1.2
-        }
-        style={{
-          filter: severity
-            ? `drop-shadow(0 0 8px ${glow})`
-            : "none",
-        }}
+        stroke={selected ? "#e6edf6" : ring}
+        strokeWidth={selected ? 2.2 : severity ? 1.8 : 1.1}
       />
 
       <text
-        x="0"
-        y="-36"
-        textAnchor="middle"
-        fill="#7e8aa0"
-        fontSize="11"
-        fontFamily="JetBrains Mono, monospace"
-      >
-        {node.comm}
-      </text>
-
-      <text
-        x="0"
         y="4"
         textAnchor="middle"
         fill="#e6edf6"
-        fontSize="11"
+        fontSize="10"
         fontFamily="JetBrains Mono, monospace"
       >
         {node.pid}
       </text>
 
-      {node.ran_as_root && (
-        <text
-          x="0"
-          y="43"
-          textAnchor="middle"
-          fill="#ff5d5d"
-          fontSize="9"
-          fontFamily="JetBrains Mono, monospace"
-        >
-          ROOT
-        </text>
-      )}
+      <text
+        y="-30"
+        textAnchor="middle"
+        fill="#7e8aa0"
+        fontSize="10"
+        fontFamily="JetBrains Mono, monospace"
+        stroke="#0d1422"
+        strokeWidth="4"
+        paintOrder="stroke"
+      >
+        {label}
+      </text>
 
-      {severity && (
-        <circle
-          cx="16"
-          cy="-16"
-          r="4"
-          fill={ringColor}
-          style={{
-            filter: `drop-shadow(0 0 5px ${glow})`,
-          }}
-        />
-      )}
+      {severity && <circle cx="14" cy="-14" r="3.5" fill={ring} />}
     </g>
   );
 }
 
+function LegendRow({ swatch, label }) {
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-mute">
+      {swatch}
+      <span className="font-mono">{label}</span>
+    </div>
+  );
+}
+
+function Detail({ label, value, tone }) {
+  return (
+    <div className="flex justify-between gap-3 py-[3px] font-mono text-[11px]">
+      <span className="text-mute">{label}</span>
+      <span className={tone || "text-text"}>{value}</span>
+    </div>
+  );
+}
 
 export default function ProcessGraph() {
-  const [processes, setProcesses] =
-    useState([]);
+  const processesPoll = usePoll(api.processes, 5000);
+  const alertsPoll = usePoll(api.alerts, 5000);
+  const [selectedPid, setSelectedPid] = useState(null);
 
-  const [alerts, setAlerts] =
-    useState([]);
-
-  const [selected, setSelected] =
-    useState(null);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState("");
-
-
-  async function loadGraph() {
-    try {
-      setError("");
-
-      const [
-        processResponse,
-        alertResponse,
-      ] = await Promise.all([
-        fetch("/api/processes"),
-        fetch("/api/alerts"),
-      ]);
-
-      if (!processResponse.ok) {
-        throw new Error(
-          `Process request failed: ${processResponse.status}`
-        );
-      }
-
-      const processData =
-        await processResponse.json();
-
-      let alertData = {
-        alerts: [],
-      };
-
-      if (alertResponse.ok) {
-        alertData =
-          await alertResponse.json();
-      }
-
-      const processRows =
-        Array.isArray(processData.processes)
-          ? processData.processes
-          : [];
-
-      const alertRows =
-        Array.isArray(alertData.alerts)
-          ? alertData.alerts
-          : [];
-
-      setProcesses(
-        processRows.map(normaliseProcess)
-      );
-
-      setAlerts(alertRows);
-
-      setSelected((current) => {
-        if (!current) {
-          return null;
-        }
-
-        return processRows.some(
-          (process) =>
-            Number(process.pid) ===
-            Number(current.pid)
-        )
-          ? current
-          : null;
-      });
-    } catch (err) {
-      setError(
-        err.message ||
-        "Process Graph request failed."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-
-  useEffect(() => {
-    loadGraph();
-
-    const timer =
-      window.setInterval(
-        loadGraph,
-        REFRESH_MS
-      );
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, []);
-
-
-  const tree = useMemo(
-    () => buildTree(processes),
-    [processes]
+  const processes = useMemo(
+    () => (processesPoll.data?.processes || []).map(normaliseProcess),
+    [processesPoll.data]
   );
+  const alerts = useMemo(() => alertsPoll.data?.alerts || [], [alertsPoll.data]);
 
+  const roots = useMemo(() => buildTree(processes), [processes]);
+  const { nodes, edges } = useMemo(() => flatten(roots), [roots]);
+  const layout = useMemo(() => layoutTree(roots), [roots]);
+  const worst = useMemo(() => worstSeverityByPid(alerts), [alerts]);
 
-  const nodes = useMemo(
-    () => collectNodes(tree.roots),
-    [tree.roots]
-  );
+  // Keep the selection by pid, so it survives a refresh and clears itself
+  // when that process is no longer in the list.
+  const selected = nodes.find((n) => n.pid === selectedPid) || null;
+  const selectedAlerts = selected
+    ? alerts.filter((a) => Number(a.pid) === selected.pid)
+    : [];
 
-
-  const edges = useMemo(
-    () => collectEdges(tree.roots),
-    [tree.roots]
-  );
-
-
-  const positions = useMemo(
-    () => layoutTree(tree.roots),
-    [tree.roots]
-  );
-
-
-  const width = Math.max(
-    900,
-    positions.size
-      ? Math.max(
-          ...Array.from(
-            positions.values()
-          ).map(
-            (position) => position.x
-          )
-        ) + 180
-      : 900
-  );
-
-
-  const maxDepth =
-    nodes.length
-      ? Math.max(
-          ...nodes.map(
-            (node) =>
-              Number(node.depth) || 0
-          )
-        )
-      : 0;
-
-
-  const height =
-    Math.max(
-      560,
-      150 + (maxDepth + 1) * 120
-    );
-
+  const loading = !processesPoll.data && !processesPoll.error;
 
   return (
-    <main
-      style={{
-        padding: "18px 22px 40px",
-        color: "#e6edf6",
-      }}
-    >
-      <div
-        style={{
-          marginBottom: "18px",
-        }}
-      >
-        <div
-          style={{
-            color: "#4fd1c5",
-            fontFamily:
-              "JetBrains Mono, monospace",
-            fontSize: "10px",
-            letterSpacing: "2px",
-            marginBottom: "8px",
-          }}
-        >
-          PROCESS CORRELATION GRAPH
-        </div>
-
-        <h1
-          style={{
-            margin: 0,
-            fontSize: "28px",
-            fontWeight: 600,
-          }}
-        >
-          Process Graph
-        </h1>
-
-        <p
-          style={{
-            marginTop: "7px",
-            color: "#7e8aa0",
-            fontSize: "13px",
-          }}
-        >
-          Live process tree built from
-          parent and child relationships.
-          Nodes that fire detections glow
-          by severity.
-        </p>
+    <div>
+      <div className="page-header">
+        <div className="eyebrow">Process correlation</div>
+        <h1>Process Graph</h1>
+        <p>Parent and child processes from /api/processes. A ring colour shows the worst alert on that pid.</p>
       </div>
 
-
-      {error && (
-        <div
-          style={{
-            marginBottom: "14px",
-            padding: "12px 14px",
-            border:
-              "1px solid rgba(255,93,93,0.45)",
-            background:
-              "rgba(255,93,93,0.08)",
-            color: "#ff5d5d",
-            borderRadius: "8px",
-            fontFamily:
-              "JetBrains Mono, monospace",
-            fontSize: "12px",
-          }}
-        >
-          {error}
+      {processesPoll.error && (
+        <div className="mb-3 rounded border border-critical/45 bg-critical/10 px-3 py-2 font-mono text-[11px] text-critical">
+          Could not load /api/processes: {String(processesPoll.error.message || processesPoll.error)}
         </div>
       )}
 
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "minmax(0, 1fr) 260px",
-          gap: "18px",
-          alignItems: "start",
-        }}
-      >
-
-        <section
-          style={{
-            minHeight: "570px",
-            border:
-              "1px solid #243149",
-            borderRadius: "9px",
-            background:
-              "rgba(17,26,43,0.62)",
-            overflow: "auto",
-            boxShadow:
-              "0 18px 50px rgba(0,0,0,0.22)",
-          }}
-        >
+      <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0, 1fr) 280px" }}>
+        <section className="min-h-[420px] overflow-auto rounded-lg border border-line bg-ink-800/60">
           {loading ? (
-            <div
-              style={{
-                padding: "40px",
-                color: "#7e8aa0",
-                fontFamily:
-                  "JetBrains Mono, monospace",
-              }}
-            >
-              Loading process tree...
-            </div>
+            <div className="p-6 font-mono text-[12px] text-mute">Loading process tree...</div>
           ) : nodes.length === 0 ? (
-            <div
-              style={{
-                padding: "40px",
-                color: "#7e8aa0",
-                fontFamily:
-                  "JetBrains Mono, monospace",
-              }}
-            >
-              No process data returned by
-              /api/processes
+            <div className="p-6 font-mono text-[12px] text-mute">
+              /api/processes returned no processes.
             </div>
           ) : (
             <svg
-              width={width}
-              height={height}
-              viewBox={`0 0 ${width} ${height}`}
+              width={layout.width}
+              height={layout.height}
+              viewBox={`0 0 ${layout.width} ${layout.height}`}
               role="img"
               aria-label="Process correlation graph"
             >
-
-              {edges.map((edge) => {
-                const parentPosition =
-                  positions.get(
-                    edge.parent.pid
-                  );
-
-                const childPosition =
-                  positions.get(
-                    edge.child.pid
-                  );
-
-                if (
-                  !parentPosition ||
-                  !childPosition
-                ) {
-                  return null;
-                }
-
+              {edges.map(({ parent, child }) => {
+                const a = layout.positions.get(parent.pid);
+                const b = layout.positions.get(child.pid);
+                if (!a || !b) return null;
+                const mid = (a.y + b.y) / 2;
                 return (
                   <path
-                    key={`${edge.parent.pid}-${edge.child.pid}`}
-                    d={`
-                      M ${parentPosition.x}
-                        ${parentPosition.y}
-                      C ${parentPosition.x}
-                        ${parentPosition.y + 45},
-                        ${childPosition.x}
-                        ${childPosition.y - 45},
-                        ${childPosition.x}
-                        ${childPosition.y}
-                    `}
+                    key={`${parent.pid}-${child.pid}`}
+                    d={`M ${a.x} ${a.y} C ${a.x} ${mid}, ${b.x} ${mid}, ${b.x} ${b.y}`}
                     fill="none"
                     stroke="#243149"
-                    strokeWidth="1.4"
+                    strokeWidth="1.3"
                   />
                 );
               })}
 
-
-              {nodes.map((node) => {
-                const position =
-                  positions.get(
-                    node.pid
-                  );
-
-                if (!position) {
-                  return null;
-                }
-
-                const severity =
-                  severityForProcess(
-                    node.pid,
-                    alerts
-                  );
-
-                return (
-                  <ProcessNode
-                    key={node.pid}
-                    node={node}
-                    position={position}
-                    severity={severity}
-                    selected={
-                      selected?.pid ===
-                      node.pid
-                    }
-                    onSelect={setSelected}
-                  />
-                );
-              })}
+              {nodes.map((node) => (
+                <ProcessNode
+                  key={node.pid}
+                  node={node}
+                  position={layout.positions.get(node.pid)}
+                  severity={worst.get(node.pid) || null}
+                  selected={selected?.pid === node.pid}
+                  onSelect={setSelectedPid}
+                />
+              ))}
             </svg>
           )}
         </section>
 
-
-        <aside
-          style={{
-            display: "grid",
-            gap: "14px",
-          }}
-        >
-
-          <section
-            style={{
-              border:
-                "1px solid #243149",
-              borderRadius: "9px",
-              padding: "16px",
-              background:
-                "rgba(17,26,43,0.62)",
-            }}
-          >
-            <div
-              style={{
-                color: "#7e8aa0",
-                fontFamily:
-                  "JetBrains Mono, monospace",
-                fontSize: "10px",
-                letterSpacing: "2px",
-                marginBottom: "14px",
-              }}
-            >
-              LEGEND
+        <aside className="grid content-start gap-3">
+          <div className="panel">
+            <div className="panel-label">Legend</div>
+            <div className="panel-body grid gap-2">
+              {Object.entries(SEVERITY_COLOR).map(([level, color]) => (
+                <LegendRow
+                  key={level}
+                  label={`${level} alert`}
+                  swatch={
+                    <span
+                      className="h-2.5 w-2.5 rounded-full border-2"
+                      style={{ borderColor: color }}
+                    />
+                  }
+                />
+              ))}
+              <LegendRow
+                label="runs as root"
+                swatch={<span className="h-2.5 w-2.5 rounded-full border border-dashed border-critical" />}
+              />
+              <LegendRow
+                label="no alerts"
+                swatch={<span className="h-2.5 w-2.5 rounded-full border border-line" />}
+              />
             </div>
+          </div>
 
-            {[
-              ["critical", "critical alert"],
-              ["high", "high alert"],
-              ["medium", "medium alert"],
-              ["low", "low alert"],
-            ].map(
-              ([severity, label]) => (
-                <div
-                  key={severity}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    marginBottom: "10px",
-                    fontSize: "12px",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: "9px",
-                      height: "9px",
-                      borderRadius: "50%",
-                      background:
-                        SEVERITY[
-                          severity
-                        ].color,
-                      boxShadow:
-                        `0 0 8px ${SEVERITY[severity].glow}`,
-                    }}
+          <div className="panel">
+            <div className="panel-label">{selected ? "Process detail" : "Select a node"}</div>
+            <div className="panel-body">
+              {!selected ? (
+                <div className="font-mono text-[11px] leading-relaxed text-mute">
+                  Click a node to see its fields and the alerts raised on that pid.
+                </div>
+              ) : (
+                <>
+                  <Detail label="pid" value={selected.pid} />
+                  <Detail label="ppid" value={selected.ppid ?? "-"} />
+                  <Detail label="comm" value={selected.comm} />
+                  <Detail label="uid" value={selected.uid} />
+                  <Detail label="lifetime" value={`${selected.lifetime_s}s`} />
+                  <Detail
+                    label="root"
+                    value={selected.ran_as_root ? "yes" : "no"}
+                    tone={selected.ran_as_root ? "text-critical" : "text-low"}
                   />
 
-                  <span
-                    style={{
-                      color: "#7e8aa0",
-                      fontFamily:
-                        "JetBrains Mono, monospace",
-                    }}
-                  >
-                    {label}
-                  </span>
-                </div>
-              )
-            )}
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                marginTop: "14px",
-                marginBottom: "10px",
-                fontSize: "12px",
-              }}
-            >
-              <span
-                style={{
-                  width: "10px",
-                  height: "10px",
-                  borderRadius: "50%",
-                  border:
-                    "1px dashed #ff5d5d",
-                }}
-              />
-
-              <span
-                style={{
-                  color: "#7e8aa0",
-                  fontFamily:
-                    "JetBrains Mono, monospace",
-                }}
-              >
-                runs as root
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                fontSize: "12px",
-              }}
-            >
-              <span
-                style={{
-                  width: "10px",
-                  height: "10px",
-                  borderRadius: "50%",
-                  border:
-                    "1px solid #243149",
-                }}
-              />
-
-              <span
-                style={{
-                  color: "#7e8aa0",
-                  fontFamily:
-                    "JetBrains Mono, monospace",
-                }}
-              >
-                clean process
-              </span>
-            </div>
-          </section>
-
-
-          <section
-            style={{
-              border:
-                "1px solid #243149",
-              borderRadius: "9px",
-              padding: "16px",
-              background:
-                "rgba(17,26,43,0.62)",
-            }}
-          >
-            {!selected ? (
-              <div
-                style={{
-                  color: "#7e8aa0",
-                  fontFamily:
-                    "JetBrains Mono, monospace",
-                  fontSize: "12px",
-                  lineHeight: 1.7,
-                }}
-              >
-                click a node to inspect
-                its process and alerts
-              </div>
-            ) : (
-              <>
-                <div
-                  style={{
-                    color: "#4fd1c5",
-                    fontFamily:
-                      "JetBrains Mono, monospace",
-                    fontSize: "10px",
-                    letterSpacing: "1.5px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  PROCESS DETAIL
-                </div>
-
-                <div
-                  style={{
-                    fontFamily:
-                      "JetBrains Mono, monospace",
-                    fontSize: "12px",
-                    lineHeight: 1.9,
-                  }}
-                >
-                  <div>
-                    PID: {selected.pid}
-                  </div>
-
-                  <div>
-                    PPID:{" "}
-                    {selected.ppid ??
-                      "—"}
-                  </div>
-
-                  <div>
-                    COMM: {selected.comm}
-                  </div>
-
-                  <div>
-                    UID: {selected.uid}
-                  </div>
-
-                  <div>
-                    DEPTH:{" "}
-                    {selected.depth}
-                  </div>
-
-                  <div>
-                    LIFETIME:{" "}
-                    {selected.lifetime_s}s
-                  </div>
-
-                  <div
-                    style={{
-                      color:
-                        selected.ran_as_root
-                          ? "#ff5d5d"
-                          : "#39c2b0",
-                    }}
-                  >
-                    ROOT:{" "}
-                    {selected.ran_as_root
-                      ? "yes"
-                      : "no"}
+                  <div className="eyebrow mb-1 mt-3 border-t border-line pt-3">Alerts</div>
+                  {selectedAlerts.length === 0 ? (
+                    <div className="font-mono text-[11px] text-mute">No alerts for this process.</div>
+                  ) : (
+                    selectedAlerts.map((alert, i) => (
                       <div
-  style={{
-    marginTop: "14px",
-    paddingTop: "12px",
-    borderTop: "1px solid #243149",
-  }}
->
-  <div
-    style={{
-      color: "#e6edf6",
-      fontSize: "11px",
-      letterSpacing: "0.08em",
-      textTransform: "uppercase",
-      marginBottom: "8px",
-    }}
-  >
-    Alerts
-  </div>
-
-  {alerts.filter(
-    (alert) =>
-      Number(alert.pid) === Number(selected.pid)
-  ).length === 0 ? (
-    <div
-      style={{
-        color: "#7e8aa0",
-      }}
-    >
-      No alerts for this process.
-    </div>
-  ) : (
-    alerts
-      .filter(
-        (alert) =>
-          Number(alert.pid) ===
-          Number(selected.pid)
-      )
-      .map((alert, index) => (
-        <div
-          key={`${alert.rule}-${alert.ts}-${index}`}
-          style={{
-            padding: "9px 0",
-            borderBottom:
-              "1px solid rgba(36,49,73,0.7)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: "12px",
-            }}
-          >
-            <span
-              style={{
-                color:
-                  alert.severity === "critical"
-                    ? "#ff5d5d"
-                    : alert.severity === "high"
-                    ? "#f2a65a"
-                    : alert.severity === "medium"
-                    ? "#e8c34a"
-                    : "#39c2b0",
-              }}
-            >
-              {alert.severity}
-            </span>
-
-            <span
-              style={{
-                color: "#7e8aa0",
-              }}
-            >
-              {alert.rule}
-            </span>
+                        key={`${alert.rule}-${alert.ts}-${i}`}
+                        className="border-b border-line/60 py-2 last:border-0"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <SeverityChip severity={alert.severity} />
+                          <span className="truncate font-mono text-[10px] text-mute">{alert.rule}</span>
+                        </div>
+                        {alert.summary && (
+                          <div className="mt-1 text-[12px] text-text">{alert.summary}</div>
+                        )}
+                        <div className="mt-0.5 flex gap-2 font-mono text-[10px] text-mute">
+                          {alert.technique && <span className="text-ml">{alert.technique}</span>}
+                          <span>ts {formatKts(alert.ts)}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
-          <div
-            style={{
-              color: "#e6edf6",
-              marginTop: "3px",
-            }}
-          >
-            {alert.summary}
+          <div className="panel">
+            <div className="panel-body font-mono text-[11px] leading-relaxed text-mute">
+              <div>{nodes.length} processes</div>
+              <div>{roots.length} root nodes</div>
+              <div>{alerts.length} alerts loaded</div>
+              <div>refresh every 5s</div>
+            </div>
           </div>
-
-          {alert.technique && (
-            <div
-              style={{
-                color: "#7c8cf8",
-                marginTop: "3px",
-              }}
-            >
-              {alert.technique}
-            </div>
-          )}
-        </div>
-      ))
-  )}
-</div>
-                  </div>
-                </div>
-              </>
-            )}
-          </section>
-
-
-          <section
-            style={{
-              border:
-                "1px solid #243149",
-              borderRadius: "9px",
-              padding: "16px",
-              background:
-                "rgba(17,26,43,0.62)",
-              fontFamily:
-                "JetBrains Mono, monospace",
-              fontSize: "11px",
-              lineHeight: 1.8,
-              color: "#7e8aa0",
-            }}
-          >
-            <div>
-              {nodes.length} processes
-            </div>
-
-            <div>
-              {tree.roots.length} root nodes
-            </div>
-
-            <div>
-              {alerts.length} alerts loaded
-            </div>
-
-            <div>
-              live refresh: 5s
-            </div>
-          </section>
-
         </aside>
       </div>
-    </main>
+    </div>
   );
 }
