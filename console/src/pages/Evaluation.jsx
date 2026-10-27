@@ -1,47 +1,68 @@
-
 import { useMemo } from "react";
 import { api, usePoll } from "../api";
+import StatCard from "../components/StatCard";
+import { formatKts } from "../format";
 
-const severityStyles = {
-  critical: "text-red-400",
-  high: "text-orange-300",
-  medium: "text-yellow-300",
-  low: "text-teal-300",
-};
+// The ML detector tags its alerts with this rule id. Analytics.jsx uses the
+// same convention, so the two pages agree.
+const ML_RULE = "ML-ANOM";
 
-function Panel({ title, children }) {
+function Bar({ label, count, max, bar }) {
+  const width = max > 0 ? `${Math.max((count / max) * 100, count > 0 ? 2 : 0)}%` : "0%";
+
   return (
-    <section className="panel min-w-0 overflow-hidden">
-      <div className="border-b border-line px-4 py-3">
-        <p className="eyebrow">{title}</p>
+    <div className="grid grid-cols-[110px_minmax(0,1fr)_36px] items-center gap-3">
+      <span className="truncate font-mono text-[11px] text-mute" title={label}>
+        {label}
+      </span>
+      <div className="h-2 overflow-hidden rounded-full bg-ink-600">
+        <div className={`h-full rounded-full ${bar}`} style={{ width }} />
       </div>
-      <div className="p-4">{children}</div>
-    </section>
+      <span className="text-right font-mono text-[11px] text-text">{count}</span>
+    </div>
   );
 }
 
-function StatCard({ label, value, detail, color = "text-text" }) {
-  return (
-    <section className="panel min-w-0 p-4">
-      <p className="eyebrow">{label}</p>
-      <p className={`stat-num mt-3 break-words text-3xl ${color}`}>
-        {value}
-      </p>
-      {detail && (
-        <p className="mt-2 text-xs leading-5 text-mute">{detail}</p>
-      )}
-    </section>
-  );
+function formatNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(4) : "-";
 }
 
-function formatScore(value) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
+// Work out the ML status from the three flags the API documents. ml_alerting,
+// not ml_ready, says whether ML can actually raise an alert, so it decides.
+function describeMl(mlReady, mlAlerting) {
+  if (mlReady === false) {
+    return {
+      label: "ML not loaded",
+      tone: "text-critical",
+      text: "The ML subsystem reports that it is not ready, so no ML alert can come from it.",
+    };
   }
-
-  return value <= 1
-    ? `${(value * 100).toFixed(0)}%`
-    : `${value.toFixed(1)}`;
+  if (mlAlerting === true) {
+    return {
+      label: "ML alerting on",
+      tone: "text-signal",
+      text: "ML is scoring and is allowed to raise alerts.",
+    };
+  }
+  if (mlAlerting === false) {
+    return {
+      label: "ML scoring only",
+      tone: "text-medium",
+      text: "ML is scoring behaviour but is not allowed to raise alerts. A zero in ML alerts is expected in this state.",
+    };
+  }
+  if (mlReady === true) {
+    return {
+      label: "ML ready",
+      tone: "text-signal",
+      text: "ML is loaded, but the API did not say whether it can alert.",
+    };
+  }
+  return {
+    label: "ML status unknown",
+    tone: "text-mute",
+    text: "The API response does not say enough to tell what ML is doing.",
+  };
 }
 
 export default function Evaluation() {
@@ -50,358 +71,202 @@ export default function Evaluation() {
   const anomalyPoll = usePoll(api.anomaly, 5000);
 
   const health = healthPoll.data;
-  const alertResponse = alertsPoll.data;
   const anomaly = anomalyPoll.data;
 
-  const alerts = useMemo(() => {
-    if (Array.isArray(alertResponse)) return alertResponse;
-    if (Array.isArray(alertResponse?.alerts)) {
-      return alertResponse.alerts;
-    }
-    return [];
-  }, [alertResponse]);
+  const alerts = useMemo(() => alertsPoll.data?.alerts ?? [], [alertsPoll.data]);
+  const scores = useMemo(() => anomaly?.scores ?? [], [anomaly]);
+  const alertsLoaded = Boolean(alertsPoll.data);
 
-  const ruleAlerts = alerts.filter(
-    (alert) => alert.rule && alert.rule !== "ML-ANOM"
-  );
-
-  const mlAlerts = alerts.filter(
-    (alert) => alert.rule === "ML-ANOM"
-  );
-
-  const techniques = useMemo(() => {
-    const counts = new Map();
+  const { ruleCount, mlCount, techniques } = useMemo(() => {
+    const byTechnique = new Map();
+    let ml = 0;
 
     alerts.forEach((alert) => {
-      const technique = alert.technique;
-
-      if (
-        technique &&
-        technique !== "ML-ANOM" &&
-        technique !== "N/A"
-      ) {
-        counts.set(technique, (counts.get(technique) || 0) + 1);
+      if (alert.rule === ML_RULE) {
+        ml += 1;
+      } else if (alert.technique) {
+        byTechnique.set(alert.technique, (byTechnique.get(alert.technique) || 0) + 1);
       }
     });
 
-    return [...counts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
+    return {
+      ruleCount: alerts.length - ml,
+      mlCount: ml,
+      techniques: [...byTechnique.entries()]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    };
   }, [alerts]);
-
-  const scoreValue =
-    typeof anomaly?.score === "number"
-      ? anomaly.score
-      : typeof anomaly?.anomaly_score === "number"
-        ? anomaly.anomaly_score
-        : null;
-
-  const scoreLabel = formatScore(scoreValue);
-  const gaugeValue =
-    scoreValue === null
-      ? 0
-      : Math.max(0, Math.min(100, scoreValue <= 1 ? scoreValue * 100 : scoreValue));
-
-  const threshold =
-    typeof anomaly?.threshold === "number"
-      ? anomaly.threshold
-      : null;
 
   const mlReady = health?.ml_ready ?? anomaly?.ml_ready;
   const mlAlerting = health?.ml_alerting ?? anomaly?.ml_alerting;
-  const autoencoderLoaded =
-    health?.ml_has_autoencoder ?? anomaly?.ml_has_autoencoder;
+  const ml = describeMl(mlReady, mlAlerting);
 
-  let mlStatus = "ML STATUS UNAVAILABLE";
-  let mlStatusDetail =
-    "The current API response does not provide enough information to determine ML status.";
-  let mlStatusColor = "text-mute";
-
-  if (mlReady === false) {
-    mlStatus = "ML NOT READY";
-    mlStatusDetail =
-      "The ML subsystem reports that it is not ready. ML alerting cannot be assumed to be active.";
-    mlStatusColor = "text-red-400";
-  } else if (mlAlerting === true) {
-    mlStatus = "ML ALERTING ON";
-    mlStatusDetail =
-      "The API reports that ML alerting is enabled.";
-    mlStatusColor = "text-signal";
-  } else if (mlAlerting === false) {
-    mlStatus = "ML ALERTING OFF";
-    mlStatusDetail =
-      "The ML subsystem may be available for scoring, but it is not currently configured to raise ML alerts.";
-    mlStatusColor = "text-yellow-300";
-  } else if (mlReady === true) {
-    mlStatus = "ML READY";
-    mlStatusDetail =
-      "The ML subsystem is ready, but its alerting state is not available.";
-    mlStatusColor = "text-signal";
-  }
-
-  const dataErrors = [
-    healthPoll.error && "Health API request failed.",
-    alertsPoll.error && "Alerts API request failed.",
-    anomalyPoll.error && "Anomaly API request failed.",
+  const errors = [
+    healthPoll.error && "/api/health",
+    alertsPoll.error && "/api/alerts",
+    anomalyPoll.error && "/api/anomaly",
   ].filter(Boolean);
 
-  const maxTechniqueCount = Math.max(
-    1,
-    ...techniques.map((item) => item.count)
-  );
+  const maxTechnique = Math.max(0, ...techniques.map((item) => item.count));
+  const maxKind = Math.max(ruleCount, mlCount);
+  const show = (value) => (typeof value === "number" ? value.toLocaleString("en-US") : "-");
+
+  // Say why a zero is a zero. A bare 0 reads as "broken" in a viva.
+  let mlZeroNote = null;
+  if (alertsLoaded && mlCount === 0) {
+    mlZeroNote =
+      mlAlerting === false
+        ? "0 ML alerts because ML is not allowed to alert in this configuration."
+        : mlAlerting === true
+          ? "0 ML alerts: no score crossed the alert threshold in the returned alerts."
+          : "0 ML alerts. The API did not say whether ML can alert.";
+  }
 
   return (
-    <main className="min-h-full space-y-5 p-4 text-text sm:p-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="eyebrow">DETECTION QUALITY / MEASURED RESULTS</p>
-          <h1 className="mt-2 font-display text-2xl font-semibold">
-            Evaluation
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-mute">
-            Review rule detections, ML alerting status, technique coverage
-            and the available anomaly score using data returned by the API.
-          </p>
-        </div>
+    <div>
+      <div className="page-header">
+        <div className="eyebrow">Detection quality</div>
+        <h1>Evaluation</h1>
+        <p>
+          Rule alerts, ML status and recent anomaly scores, all from the API. The counts cover the
+          latest alerts the API returns (at most 300).
+        </p>
+      </div>
 
-        <div className="panel px-4 py-3">
-          <p className="eyebrow">DATA STATUS</p>
-          <p className="mt-2 font-mono text-sm text-signal">
-            {healthPoll.data ? "HEALTH RECEIVED" : "WAITING FOR API"}
-          </p>
+      {errors.length > 0 && (
+        <div className="mb-3 rounded border border-critical/45 bg-critical/10 px-3 py-2 font-mono text-[11px] text-critical">
+          Could not load: {errors.join(", ")}
         </div>
-      </header>
-
-      {dataErrors.length > 0 && (
-        <section className="panel border-red-500/40 p-4">
-          <p className="font-semibold text-red-400">
-            Some evaluation data could not be loaded
-          </p>
-          <ul className="mt-2 space-y-1 text-sm text-mute">
-            {dataErrors.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
-        </section>
       )}
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard label="Total events" value={show(health?.counts?.events)} sub="from /api/health" tone="signal" />
+        <StatCard label="Total alerts" value={show(health?.counts?.alerts)} sub="from /api/health" tone="high" />
         <StatCard
-          label="TOTAL EVENTS"
-          value={health?.counts?.events ?? "—"}
-          detail="Events reported by the health API"
+          label="Rule alerts"
+          value={alertsLoaded ? ruleCount : "-"}
+          sub="counted from alert records"
+          tone="signal"
         />
         <StatCard
-          label="TOTAL ALERTS"
-          value={health?.counts?.alerts ?? "—"}
-          detail="Alerts reported by the health API"
-          color="text-orange-300"
+          label="ML alerts"
+          value={alertsLoaded ? mlCount : "-"}
+          sub={`rule id ${ML_RULE}`}
+          tone="ml"
         />
-        <StatCard
-          label="RULE ALERTS"
-          value={alertsPoll.data ? ruleAlerts.length : "—"}
-          detail={
-            alertsPoll.data
-              ? "Counted from the returned alert records"
-              : "Waiting for alert records"
-          }
-          color="text-signal"
-        />
-        <StatCard
-          label="ML ALERTS"
-          value={alertsPoll.data ? mlAlerts.length : "—"}
-          detail={
-            alertsPoll.data
-              ? "Records identified with rule ID ML-ANOM"
-              : "Waiting for alert records"
-          }
-          color="text-ml"
-        />
-      </section>
+      </div>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Panel title="RULE ENGINE VS ML ANOMALY">
-          <div className="space-y-6">
-            {[
-              {
-                label: "rule alerts",
-                count: ruleAlerts.length,
-                color: "bg-signal",
-                textColor: "text-signal",
-              },
-              {
-                label: "ml alerts",
-                count: mlAlerts.length,
-                color: "bg-ml",
-                textColor: "text-ml",
-              },
-            ].map((item) => {
-              const total = ruleAlerts.length + mlAlerts.length;
-              const width =
-                total > 0 ? (item.count / total) * 100 : 0;
+      <div className="mb-3 grid gap-3 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="panel self-start">
+          <div className="panel-label">ML status</div>
+          <div className="panel-body">
+            <p className={`font-display text-[16px] font-semibold ${ml.tone}`}>{ml.label}</p>
+            <p className="mt-1 text-[12px] leading-snug text-mute">{ml.text}</p>
 
-              return (
-                <div key={item.label}>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="font-mono text-xs text-mute">
-                      {item.label}
-                    </span>
-                    <span className={`font-mono text-sm ${item.textColor}`}>
-                      {alertsPoll.data ? item.count : "—"}
-                    </span>
-                  </div>
-
-                  <div
-                    className="h-3 overflow-hidden rounded-sm bg-ink-700"
-                    role="img"
-                    aria-label={`${item.label}: ${alertsPoll.data ? item.count : "unavailable"}`}
-                  >
-                    {alertsPoll.data && total > 0 && (
-                      <div
-                        className={`h-full rounded-sm transition-all duration-500 ${item.color}`}
-                        style={{ width: `${width}%` }}
-                      />
-                    )}
-                  </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded border border-line px-2.5 py-2">
+                <div className="eyebrow">Subsystem</div>
+                <div className="mt-1 text-[12px]">
+                  {mlReady === undefined ? "unknown" : mlReady ? "ready" : "not ready"}
                 </div>
-              );
-            })}
-          </div>
-
-          <p className="mt-5 border-t border-line pt-3 text-xs leading-5 text-mute">
-            {alertsPoll.data
-              ? "These bars compare the alert records returned by the API. They do not represent event volume."
-              : "Separate rule and ML alert counts are unavailable until the alerts API returns records."}
-          </p>
-        </Panel>
-
-        <Panel title="ANOMALY GAUGE">
-          <div className="flex flex-wrap items-center gap-6">
-            <div
-              className="relative flex h-36 w-36 shrink-0 items-center justify-center rounded-full"
-              style={{
-                background: `conic-gradient(var(--ml, #7c8cf8) ${gaugeValue}%, var(--gauge-track, #243149) ${gaugeValue}% 100%)`,
-              }}
-              role="img"
-              aria-label={`Anomaly score: ${scoreLabel ?? "unavailable"}`}
-            >
-              <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full bg-ink-800">
-                <span className="font-mono text-2xl font-semibold text-ml">
-                  {scoreLabel ?? "—"}
-                </span>
-                <span className="eyebrow mt-1">SCORE</span>
+              </div>
+              <div className="rounded border border-line px-2.5 py-2">
+                <div className="eyebrow">Autoencoder</div>
+                <div className="mt-1 text-[12px]">
+                  {health?.ml_has_autoencoder === undefined
+                    ? "unknown"
+                    : health.ml_has_autoencoder
+                      ? "loaded"
+                      : "not loaded"}
+                </div>
               </div>
             </div>
 
-            <div className="min-w-0 flex-1 space-y-3">
-              <div>
-                <p className="eyebrow">MODEL</p>
-                <p className="mt-1 break-words font-mono text-sm">
-                  {anomaly?.model ?? health?.ml_mode ?? "Unavailable"}
-                </p>
-              </div>
-
-              <div>
-                <p className="eyebrow">THRESHOLD</p>
-                <p className="mt-1 font-mono text-sm">
-                  {threshold === null ? "Unavailable" : formatScore(threshold)}
-                </p>
-              </div>
-
-              <div>
-                <p className="eyebrow">ANOMALY STATUS</p>
-                <p className="mt-1 font-mono text-sm text-ml">
-                  {anomaly?.status ?? "Not provided by API"}
-                </p>
-              </div>
+            <div className="mt-3 font-mono text-[11px] text-mute">
+              mode {health?.ml_mode ?? "-"} / flagged {show(anomaly?.anomaly_count)}
             </div>
+            {mlZeroNote && <p className="mt-2 text-[11px] leading-snug text-medium">{mlZeroNote}</p>}
           </div>
-
-          <p className="mt-5 border-t border-line pt-3 text-xs leading-5 text-mute">
-            The gauge displays the score returned by the anomaly API. It does
-            not independently decide whether an event is malicious.
-          </p>
-        </Panel>
-      </section>
-
-      <Panel title="PER-TECHNIQUE ALERT BREAKDOWN">
-        {techniques.length > 0 ? (
-          <div className="space-y-4">
-            {techniques.map((item) => (
-              <div key={item.name}>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="break-all font-mono text-xs text-mute">
-                    {item.name}
-                  </span>
-                  <span className="font-mono text-xs">
-                    {item.count}
-                  </span>
-                </div>
-
-                <div className="h-2 overflow-hidden rounded-sm bg-ink-700">
-                  <div
-                    className="h-full rounded-sm bg-orange-300 transition-all duration-500"
-                    style={{
-                      width: `${(item.count / maxTechniqueCount) * 100}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm leading-6 text-mute">
-            {alertsPoll.data
-              ? "No MITRE technique records were available in the returned alerts."
-              : "Technique breakdown is unavailable until alert data loads."}
-          </p>
-        )}
-      </Panel>
-
-      <section className="panel overflow-hidden">
-        <div className="border-b border-line px-4 py-3">
-          <p className="eyebrow">ML STATUS / WHY IT MATTERS</p>
         </div>
 
-        <div className="p-4">
-          <p className={`font-display text-lg font-semibold ${mlStatusColor}`}>
-            {mlStatus}
-          </p>
-          <p className="mt-2 text-sm leading-6 text-mute">
-            {mlStatusDetail}
-          </p>
-
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-md border border-line p-3">
-              <p className="eyebrow">ML SUBSYSTEM</p>
-              <p className="mt-2 text-sm">
-                {mlReady === undefined
-                  ? "Status unavailable"
-                  : mlReady
-                    ? "Ready"
-                    : "Not ready"}
-              </p>
+        <div className="panel min-w-0">
+          <div className="panel-label">Recent anomaly scores</div>
+          {scores.length === 0 ? (
+            <div className="panel-body font-mono text-[11px] text-mute">
+              {anomalyPoll.data
+                ? "No scores yet. ML has not scored any process."
+                : "Waiting for /api/anomaly."}
             </div>
-
-            <div className="rounded-md border border-line p-3">
-              <p className="eyebrow">AUTOENCODER</p>
-              <p className="mt-2 text-sm">
-                {autoencoderLoaded === undefined
-                  ? "Status unavailable"
-                  : autoencoderLoaded
-                    ? "Loaded"
-                    : "Not loaded"}
-              </p>
+          ) : (
+            <div className="max-h-[260px] overflow-y-auto">
+              <table className="w-full text-left text-[12px]">
+                <thead className="sticky top-0 bg-ink-800 text-mute">
+                  <tr className="eyebrow">
+                    <th className="px-3 py-1.5">kts</th>
+                    <th className="px-3 py-1.5">pid</th>
+                    <th className="px-3 py-1.5">comm</th>
+                    <th className="px-3 py-1.5 text-right">iforest</th>
+                    <th className="px-3 py-1.5 text-right">recon error</th>
+                    <th className="px-3 py-1.5">flag</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scores.slice(0, 50).map((row, i) => (
+                    <tr key={`${row.pid}-${row.ts}-${i}`} className="border-t border-line/60">
+                      <td className="px-3 py-1 font-mono text-mute">{formatKts(row.ts)}</td>
+                      <td className="px-3 py-1 font-mono">{row.pid}</td>
+                      <td className="px-3 py-1 font-mono">{row.comm}</td>
+                      <td className="px-3 py-1 text-right font-mono">{formatNumber(row.iforest_score)}</td>
+                      <td className="px-3 py-1 text-right font-mono">
+                        {row.recon_error === null || row.recon_error === undefined
+                          ? "none"
+                          : formatNumber(row.recon_error)}
+                      </td>
+                      <td className={`px-3 py-1 font-mono ${row.is_anomaly ? "text-critical" : "text-mute"}`}>
+                        {row.is_anomaly ? "anomaly" : "normal"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-2">
+        <div className="panel">
+          <div className="panel-label">Rule engine vs ML anomaly</div>
+          <div className="panel-body grid gap-2.5">
+            <Bar label="rule alerts" count={ruleCount} max={maxKind} bar="bg-signal" />
+            <Bar label="ml alerts" count={mlCount} max={maxKind} bar="bg-ml" />
+            <p className="font-mono text-[10px] leading-relaxed text-mute">
+              Compares alert records only. It says nothing about event volume.
+            </p>
           </div>
         </div>
-      </section>
 
-      <p className="text-xs leading-5 text-mute">
-        DATA SOURCE: /api/health, /api/alerts, /api/anomaly. MITRE technique
-        totals are derived from returned alert records; no separate MITRE API
-        is assumed by this page.
+        <div className="panel">
+          <div className="panel-label">Rule alerts by technique</div>
+          <div className="panel-body grid gap-2.5">
+            {techniques.length === 0 ? (
+              <p className="font-mono text-[11px] text-mute">
+                {alertsLoaded ? "No technique ids in the returned alerts." : "Waiting for alerts."}
+              </p>
+            ) : (
+              techniques.map((item) => (
+                <Bar key={item.name} label={item.name} count={item.count} max={maxTechnique} bar="bg-high" />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 font-mono text-[10px] leading-relaxed text-mute">
+        Sources: /api/health, /api/alerts, /api/anomaly. kts is kernel time in seconds since boot,
+        not wall-clock time.
       </p>
-    </main>
+    </div>
   );
 }
