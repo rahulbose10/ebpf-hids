@@ -73,6 +73,14 @@ def benign():
     yield [ev(t + 16, 1018, 999, "gnome-shell", "MPROTECT", "addr=0x7f0000 prot=r-x suppressed=40")]
     yield [ev(t + 17, 1019, 1, "nginx", "BIND", "0.0.0.0:80", uid=0)]
     yield [ev(t + 18, 1020, 1000, "gcc", "OPEN", "/tmp/a.out"), ev(t + 19, 1021, 1000, "bash", "EXEC", "/tmp/a.out")]
+    # below: shapes that raised false alarms in the 2026-10-27 VM idle run
+    yield [ev(t + 20, 1022, 1000, "bash", "EXEC", "/usr/bin/curl"), ev(t + 20.06, 1022, 1000, "curl", "CONNECT", "104.20.23.154:443")]
+    yield [ev(t + 21, 1023, 1000, "bash", "EXEC", "/usr/bin/ping"), ev(t + 21.1, 1023, 1000, "ping", "CONNECT", "142.251.220.110:1025")]
+    yield [ev(t + 22, 1024, 1025, "apt", "EXEC", "/usr/lib/apt/methods/http"), ev(t + 22.2, 1024, 1025, "http", "CONNECT", "91.189.91.82:80")]
+    yield [ev(t + 23 + i * 0.02, 1025, 1000, "apt", "UNLINK", f"/var/lib/apt/lists/archive_part{i}", uid=0) for i in range(40)]
+    yield [ev(t + 24 + i * 0.02, 1026, 1, "dpkg", "UNLINK", f"/usr/share/doc/p{i}/changelog.Debian.gz.dpkg-tmp", uid=0) for i in range(40)]
+    yield [ev(t + 25 + i * 0.02, 1027, 999, "thunderbird", "UNLINK", f"/home/u/.thunderbird/p.default/db{i}.sqlite-journal") for i in range(40)]
+    yield [ev(t + 26 + i * 0.02, 1028, 999, "firefox", "RENAME", "/home/u/snap/firefox/common/.mozilla/firefox/s1xd0i8j.defau -> /home/u/snap/firefox/common/.mozilla/firefox/s1xd0i8j.defau") for i in range(40)]
 
 
 def main():

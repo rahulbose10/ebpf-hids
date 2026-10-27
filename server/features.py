@@ -10,6 +10,25 @@ DNS_PORT = 53
 _NEW_UID = re.compile(r"new_uid=(\d+)")
 _PROT = re.compile(r"prot=([r-])([w-])([x-])")
 
+# Deletes and renames that a normal desktop does in bursts on its own.
+# Every entry here was seen raising ransomware_burst during the 15 minute
+# idle run on the dev VM (2026-10-27): apt and the ESM hook clearing package
+# lists, dpkg staging files, Firefox and Thunderbird profile and cache churn.
+# These still count in unlink_count and rename_count, they just do not feed
+# destruction_burst. Anchored on the start of the path because the sensor
+# cuts each side of a RENAME at 59 chars, so the end may be missing.
+ROUTINE_CHURN = re.compile(
+    r"^/var/lib/(apt|dpkg|ubuntu-advantage|snapd|PackageKit)/"
+    r"|^/var/cache/"
+    r"|^/(root|home/[^/]+)/\.(cache|mozilla|thunderbird|config|local/share)/"
+    r"|^/home/[^/]+/snap/[^/]+/[^/]+/\.(cache|mozilla|thunderbird|config|local)/"
+    r"|\.dpkg-(tmp|new|old|dist)$"
+)
+
+
+def is_routine_churn(path):
+    return bool(path) and ROUTINE_CHURN.search(path) is not None
+
 
 def split_addr(detail):
     host, sep, port = detail.rpartition(":")
@@ -140,10 +159,15 @@ class ProcessState:
                 self.ran_as_root = True
         elif etype == "UNLINK":
             self.unlink_count += 1
-            self.destruction_times.append(ts)
+            if not is_routine_churn(detail):
+                self.destruction_times.append(ts)
         elif etype == "RENAME":
             self.rename_count += 1
-            self.destruction_times.append(ts)
+            # Both sides must be routine. Renaming ~/Documents/a.docx to
+            # ~/.cache/a.locked still counts.
+            old, new = rename_paths(detail)
+            if not (is_routine_churn(old) and (new is None or is_routine_churn(new))):
+                self.destruction_times.append(ts)
         elif etype == "MPROTECT":
             found = _PROT.search(detail)
             if found and found.group(3) == "x":

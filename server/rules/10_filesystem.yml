@@ -2,7 +2,7 @@ rules:
   - id: ransomware_burst
     technique: T1486
     severity: critical
-    description: "25 or more deletes/renames inside 5 s (possible ransomware)"
+    description: "25 or more deletes/renames inside 5 s outside package and app cache folders (possible ransomware)"
     where:
       - field: evt.type
         op: in_set

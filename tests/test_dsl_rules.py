@@ -168,3 +168,52 @@ def test_download_and_execute_negative_only_dns():
         ev(2.0, 2133, 1, "make", "EXEC", "/tmp/build/tool"),
     ]
     assert "download_and_execute" not in fired(Engine(), events)
+
+
+# Shapes below were seen raising ransomware_burst during the 15 minute idle
+# run on the dev VM (2026-10-27). Username replaced with u.
+
+def burst(pid, comm, typ, details, start=500.0, step=0.02):
+    return [ev(start + i * step, pid, 1, comm, typ, d) for i, d in enumerate(details)]
+
+
+def test_ransomware_burst_negative_apt_clearing_package_lists():
+    details = [f"/var/lib/apt/lists/in.archive.ubuntu.com_ubuntu_dists_jammy_part{i}" for i in range(40)]
+    assert "ransomware_burst" not in fired(Engine(), burst(3001, "apt", "UNLINK", details))
+
+
+def test_ransomware_burst_negative_esm_hook():
+    details = [f"/var/lib/ubuntu-advantage/apt-esm/var/lib/apt/lists/esm_{i}" for i in range(40)]
+    assert "ransomware_burst" not in fired(Engine(), burst(3002, "python3", "UNLINK", details))
+
+
+def test_ransomware_burst_negative_dpkg_staging_files():
+    details = [f"/usr/share/doc/pkg{i}/changelog.Debian.gz.dpkg-tmp" for i in range(40)]
+    assert "ransomware_burst" not in fired(Engine(), burst(3003, "dpkg", "UNLINK", details))
+
+
+def test_ransomware_burst_negative_thunderbird_journals():
+    details = [f"/home/u/.thunderbird/q405u9oo.default-release/db{i}.sqlite-journal" for i in range(40)]
+    assert "ransomware_burst" not in fired(Engine(), burst(3004, "thunderbird", "UNLINK", details))
+
+
+def test_ransomware_burst_negative_snap_firefox_cut_rename_paths():
+    # each side cut at 59 chars by the sensor, exactly as seen live
+    side = "/home/u/snap/firefox/common/.mozilla/firefox/s1xd0i8j.defau"[:59]
+    details = [f"{side} -> {side}" for _ in range(40)]
+    assert "ransomware_burst" not in fired(Engine(), burst(3005, "firefox", "RENAME", details))
+
+
+def test_ransomware_burst_positive_documents_still_caught():
+    details = [f"/home/u/Documents/report{i}.odt -> /home/u/Documents/report{i}.odt.locked" for i in range(30)]
+    assert "ransomware_burst" in fired(Engine(), burst(3006, "python3", "RENAME", details, step=0.1))
+
+
+def test_ransomware_burst_positive_moving_documents_into_a_cache_folder():
+    details = [f"/home/u/Documents/r{i}.odt -> /home/u/.cache/r{i}.locked" for i in range(30)]
+    assert "ransomware_burst" in fired(Engine(), burst(3007, "python3", "RENAME", details, step=0.1))
+
+
+def test_ransomware_burst_positive_package_named_bait_does_not_hide_the_original():
+    details = [f"/home/u/Documents/r{i}.odt -> /home/u/Documents/r{i}.dpkg-tmp" for i in range(30)]
+    assert "ransomware_burst" in fired(Engine(), burst(3008, "python3", "RENAME", details, step=0.1))

@@ -48,7 +48,31 @@ The corpus is synthetic and was written by the people who wrote the rules. A per
 
 ## On the VM with the real sensor
 
-TODO: 15 minutes of normal use (Firefox, terminal, apt update) with no sims running, through `sudo ./loader/loader | python3 -m server.ingest`, then count alerts per rule. Every alert in that window is a false positive, and that count is the number to quote in the viva.
+Ubuntu 22.04, kernel 6.8, VirtualBox. Live pipeline `sudo ./loader/loader | python -m server.ingest`, rules only, no ML.
+
+First live run, about a minute with one curl: 286 events, 0 bad lines, 0 engine errors, 0 dropped. DNS lookups to 127.0.0.53:53 raised nothing. curl's connect to :443 raised connect_after_exec, which is what led to the tuning below.
+
+### Idle run before tuning (2026-10-27, about 15 min)
+
+Normal use only: Firefox and Thunderbird running, terminal commands, ping, curl, wget, sudo apt update, git status. No attack sims. Every alert here is a false positive.
+
+    ingest: 9223 events, 14 alerts, 0 bad lines, 0 engine errors
+          8 connect_after_exec
+          6 ransomware_burst
+
+connect_after_exec fired on thunderbird, ping, curl, wget and apt's http/https download helpers. ransomware_burst fired on apt and the ESM hook clearing package lists, dpkg deleting .dpkg-tmp files, Firefox renaming inside its profile and Thunderbird deleting sqlite journals. The other 12 rules stayed silent.
+
+### Tuning
+
+ransomware_burst no longer counts deletes and renames under package manager state (/var/lib/apt, /var/lib/dpkg, /var/lib/ubuntu-advantage, /var/cache), dpkg staging files, or browser and mail profile and cache folders in the home directory. A rename only counts as routine when both sides are. ~/Documents and the rest of the home directory still count.
+
+connect_after_exec now skips a short list of network clients matched on the full exe path (curl, wget, ping, git, ssh, apt and its download helpers, anything under /snap). A copy at /tmp/curl still alerts, and interpreters like python3 still alert, because a python one-liner calling home is the case the rule exists for.
+
+What this costs: curl or wget used as a C2 channel no longer trips connect_after_exec. download_and_execute still catches curl writing a file that then gets run.
+
+### Idle run after tuning
+
+TODO: repeat the same 15 minutes with the tuned rules and paste the per-rule counts here.
 
 ## Known blind spots
 

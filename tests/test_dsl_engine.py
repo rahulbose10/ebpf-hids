@@ -314,3 +314,33 @@ def test_recent_alerts_are_newest_first():
     for i in range(3):
         eng.process_event(ev(float(i), 40000 + i, 1, "insmod", "MODULE", "x.ko", uid=0))
     assert [a["pid"] for a in eng.recent_alerts(limit=2)] == [40002, 40001]
+
+
+# Shapes below were seen raising connect_after_exec during the 15 minute idle
+# run on the dev VM (2026-10-27).
+
+def started_then_connected(exe, dst, pid=40):
+    eng = Engine()
+    eng.process_event(ev(1.0, pid, 1, "bash", "EXEC", exe))
+    return [a["rule"] for a in eng.process_event(ev(1.06, pid, 1, exe.rsplit("/", 1)[-1][:15], "CONNECT", dst))]
+
+
+def test_connect_after_exec_negative_normal_network_clients():
+    for exe, dst in [
+        ("/usr/bin/curl", "104.20.23.154:443"),
+        ("/usr/bin/wget", "104.20.23.154:443"),
+        ("/usr/bin/ping", "142.251.220.110:1025"),
+        ("/usr/lib/apt/methods/http", "91.189.91.82:80"),
+        ("/usr/lib/apt/methods/https", "91.189.91.46:443"),
+        ("/usr/lib/git-core/git-remote-https", "140.82.112.3:443"),
+        ("/snap/thunderbird/700/thunderbird-bin", "54.192.151.117:443"),
+    ]:
+        assert started_then_connected(exe, dst) == [], exe
+
+
+def test_connect_after_exec_positive_copied_client_outside_system_dirs():
+    assert started_then_connected("/tmp/curl", "5.6.7.8:443") == ["connect_after_exec"]
+
+
+def test_connect_after_exec_positive_interpreter_one_liner():
+    assert started_then_connected("/usr/bin/python3", "127.0.0.1:4444") == ["connect_after_exec"]
