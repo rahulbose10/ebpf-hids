@@ -1,20 +1,13 @@
 import "../styles/cards.css";
-function StatCard({ label, value, sub }) {
+
+function StatCard({ label, value, sub, tone }) {
   return (
     <div className="stat-card">
-      <div className="stat-header">
-        <span className="eyebrow">{label}</span>
-      </div>
+      <span className="eyebrow">{label}</span>
 
-      <div className="stat-value">
-        {value}
-      </div>
+      <div className={`stat-value ${tone ? `tone-${tone}` : ""}`}>{value}</div>
 
-      {sub && (
-        <div className="stat-sub">
-          {sub}
-        </div>
-      )}
+      {sub && <div className="stat-sub">{sub}</div>}
     </div>
   );
 }
