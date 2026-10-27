@@ -72,3 +72,9 @@
 .gauge-block.inactive{
   background:theme('colors.ink-600');
 }
+
+/* Thin dark scrollbars everywhere, instead of the browser's light default. */
+*{
+  scrollbar-width:thin;
+  scrollbar-color:theme('colors.ink-600') transparent;
+}

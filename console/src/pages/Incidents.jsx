@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { incidentsMock } from "../mock";
 import { api } from "../api";
+import SeverityChip from "../components/SeverityChip";
+import { formatKts } from "../format";
 
 const severityStyles = {
   critical: {
@@ -38,23 +40,6 @@ const statusStyles = {
   false_positive:
     "text-mute border-line bg-ink-700",
 };
-
-function formatAge(ts) {
-  const seconds = Math.max(
-    0,
-    Math.floor(Date.now() / 1000) - ts
-  );
-
-  if (seconds < 60) {
-    return `${seconds}s ago`;
-  }
-
-  if (seconds < 3600) {
-    return `${Math.floor(seconds / 60)}m ago`;
-  }
-
-  return `${Math.floor(seconds / 3600)}h ago`;
-}
 
 function Incidents() {
   const incidents = incidentsMock.incidents;
@@ -141,7 +126,7 @@ function Incidents() {
           <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-mute">
             <span className="h-2 w-2 rounded-full bg-signal" />
 
-            {incidents.length} active cases
+            {incidents.length} cases · demo data
           </div>
         </div>
       </section>
@@ -191,10 +176,10 @@ function Incidents() {
                   }`}
                 >
                   <span
-                    className={`min-h-[112px] ${severity.bg}`}
+                    className={severity.bg}
                   />
 
-                  <span className="min-w-0 px-4 py-4">
+                  <span className="min-w-0 px-3 py-2.5">
                     <span className="flex items-start justify-between gap-3">
                       <span className="min-w-0">
                         <span
@@ -212,14 +197,10 @@ function Incidents() {
                         </span>
                       </span>
 
-                      <span
-                        className={`shrink-0 rounded border px-2 py-1 font-mono text-[9px] font-semibold uppercase ${severity.text} ${severity.border} ${severity.soft}`}
-                      >
-                        {incident.severity}
-                      </span>
+                      <SeverityChip severity={incident.severity} />
                     </span>
 
-                    <span className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[10px] text-mute">
+                    <span className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] text-mute">
                       <span>
                         PID {incident.root_pid}
                       </span>
@@ -233,11 +214,11 @@ function Incidents() {
                       </span>
 
                       <span>
-                        {formatAge(incident.last_seen)}
+                        ts {formatKts(incident.last_seen)}
                       </span>
                     </span>
 
-                    <span className="mt-3">
+                    <span className="mt-1.5 block">
                       <span
                         className={`inline-flex rounded border px-2 py-1 font-mono text-[9px] uppercase ${statusClass}`}
                       >
@@ -253,7 +234,7 @@ function Incidents() {
 
         <div className="panel min-w-0 overflow-hidden">
           {!selectedIncident ? (
-            <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
+            <div className="flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
               <div className="grid h-12 w-12 place-items-center rounded-full border border-line bg-ink-800 font-mono text-lg text-mute">
                 !
               </div>
@@ -269,14 +250,14 @@ function Incidents() {
             </div>
           ) : (
             <>
-              <div className="border-b border-line px-5 py-4">
+              <div className="border-b border-line px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="eyebrow">
                       CASE #{selectedIncident.id}
                     </div>
 
-                    <h2 className="mt-2 text-xl font-semibold leading-7">
+                    <h2 className="mt-1.5 text-base font-semibold leading-6">
                       {selectedIncident.title}
                     </h2>
 
@@ -297,31 +278,12 @@ function Incidents() {
                       </span>
 
                       <span>
-                        last seen:{" "}
-                        {formatAge(
-                          selectedIncident.last_seen
-                        )}
+                        last ts:{" "}{formatKts(selectedIncident.last_seen)}
                       </span>
                     </div>
                   </div>
 
-                  <span
-                    className={`shrink-0 rounded border px-2 py-1 font-mono text-[9px] font-semibold uppercase ${
-                      (
-                        severityStyles[
-                          selectedIncident.severity
-                        ] || severityStyles.low
-                      ).text
-                    } ${
-                      (
-                        severityStyles[
-                          selectedIncident.severity
-                        ] || severityStyles.low
-                      ).border
-                    }`}
-                  >
-                    {selectedIncident.severity}
-                  </span>
+                  <SeverityChip severity={selectedIncident.severity} />
                 </div>
               </div>
 
@@ -489,11 +451,7 @@ function Incidents() {
                                 </h3>
                               </div>
 
-                              <span
-                                className={`rounded border px-2 py-1 font-mono text-[9px] uppercase ${severity.text} ${severity.border}`}
-                              >
-                                {alert.severity}
-                              </span>
+                              <SeverityChip severity={alert.severity} />
                             </div>
 
                             <div className="grid grid-cols-2 gap-px bg-line md:grid-cols-4">
