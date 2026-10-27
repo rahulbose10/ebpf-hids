@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --bg-main:#0d1422;
+  --bg-panel:#131d31;
+  --text-main:#e6edf6;
+  --grid-line:rgba(255,255,255,0.03);
+
+  --border-color:#2b3553;
+  --primary:#3d5af1;
+  --text-muted:#8ca2c9;
+  --bg-surface:#111827;
+}
+
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+
+html,
+body,
+#root{
+  width:100%;
+  min-height:100vh;
+  color:var(--text-secondary);
+}
+
+body{
+  font-family:"Inter",sans-serif;
+  background:var(--bg-main);
+  color:var(--text-main);
+
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.03) 0,
+      rgba(255,255,255,0.03) 1px,
+      transparent 1px,
+      transparent 40px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.03) 0,
+      rgba(255,255,255,0.03) 1px,
+      transparent 1px,
+      transparent 40px
+    );
+}
+
+code,
+pre{
+  font-family:"JetBrains Mono", monospace;
+}
+
+@layer components {
+  .panel {
+    @apply bg-ink-800/70 border border-line rounded-lg backdrop-blur-sm;
+  }
+
+  .eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-[0.2em] text-mute;
+  }
+
+  .stat-num {
+    @apply font-display font-semibold tabular-nums;
+  }
+}
+
+h1,h2,h3{
+  font-family:"Space Grotesk",sans-serif;
+}
+
+.stat-value{
+  font-family:"JetBrains Mono",monospace;
+}
