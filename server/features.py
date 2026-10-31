@@ -1,5 +1,6 @@
 import posixpath
 import re
+import time
 from collections import deque
 
 MAX_TRACK = 256
@@ -11,13 +12,6 @@ _NEW_UID = re.compile(r"new_uid=(\d+)")
 _OLD_UID = re.compile(r"old_uid=(\d+)")
 _PROT = re.compile(r"prot=([r-])([w-])([x-])")
 
-# Deletes and renames that a normal desktop does in bursts on its own.
-# Every entry here was seen raising ransomware_burst during the 15 minute
-# idle run on the dev VM (2026-10-27): apt and the ESM hook clearing package
-# lists, dpkg staging files, Firefox and Thunderbird profile and cache churn.
-# These still count in unlink_count and rename_count, they just do not feed
-# destruction_burst. Anchored on the start of the path because the sensor
-# cuts each side of a RENAME at 59 chars, so the end may be missing.
 ROUTINE_CHURN = re.compile(
     r"^/var/lib/(apt|dpkg|ubuntu-advantage|snapd|PackageKit)/"
     r"|^/var/cache/"
@@ -63,9 +57,6 @@ class ProcessState:
         self.file_write_count = 0
         self.ptrace_count = 0
         self.setuid_count = 0
-        # setuid calls that went from a non-root uid to 0. cron and other
-        # root daemons call setuid(0) while already root before running a
-        # job; that is not an escalation and must not count here.
         self.root_gain_count = 0
         self.unlink_count = 0
         self.rename_count = 0
@@ -171,8 +162,6 @@ class ProcessState:
                 self.destruction_times.append(ts)
         elif etype == "RENAME":
             self.rename_count += 1
-            # Both sides must be routine. Renaming ~/Documents/a.docx to
-            # ~/.cache/a.locked still counts.
             old, new = rename_paths(detail)
             if not (is_routine_churn(old) and (new is None or is_routine_churn(new))):
                 self.destruction_times.append(ts)
@@ -206,3 +195,67 @@ class ProcessState:
             "depth": depth,
             "lifetime_s": self.lifetime_s,
         }
+
+
+FEATURE_NAMES = [
+    "distinct_syscall_types",
+    "exec_count",
+    "exec_depth",
+    "file_write_count",
+    "file_write_rate",
+    "connect_count",
+    "connect_rate",
+    "ran_as_root",
+    "lifetime_sec",
+    "burst_rate",
+    "hour_of_day",
+    "uid",
+    "distinct_files_written",
+    "distinct_dst",
+    "ptrace_count",
+    "setuid_count",
+]
+
+N_FEATURES = len(FEATURE_NAMES)
+MIN_LIFETIME = 0.1
+BURST_RATE_WINDOW = 1.0
+
+
+def burst_rate(timestamps, window=BURST_RATE_WINDOW):
+    times = sorted(timestamps)
+    best = 0
+    left = 0
+    for right, ts in enumerate(times):
+        while ts - times[left] > window:
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+
+def current_hour():
+    return time.localtime().tm_hour
+
+
+def extract_features(state, depth, hour=None):
+    lifetime = state.lifetime_s
+    divisor = max(lifetime, MIN_LIFETIME)
+    if hour is None:
+        hour = current_hour()
+    return [
+        float(len(state.types)),
+        float(state.exec_count),
+        float(depth),
+        float(state.file_write_count),
+        state.file_write_count / divisor,
+        float(state.connect_count),
+        state.connect_count / divisor,
+        1.0 if state.ran_as_root else 0.0,
+        float(lifetime),
+        float(burst_rate(state.event_times)),
+        float(hour),
+        float(state.uid),
+        float(state.distinct_files_written),
+        float(state.distinct_destinations),
+        float(state.ptrace_count),
+        float(state.setuid_count),
+    ]

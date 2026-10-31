@@ -184,7 +184,7 @@ class Engine:
             "is_anomaly": bool(result.get("is_anomaly")),
         }
         self.anomaly_scores.append(row)
-        if not row["is_anomaly"]:
+        if not row["is_anomaly"] or not getattr(self.anomaly_model, "alerting", True):
             return None
         return self._raise(state, evt, "ml_anomaly", "ML-ANOM", "medium",
                            float(result.get("confidence", 0.5)),
