@@ -1,142 +1,119 @@
-import sqlite3
+import argparse
+import json
+import sys
+import time
+from collections import Counter, defaultdict
+
 import numpy as np
-from server.features import extract_features
+
+from server.engine import Engine
+from server.features import FEATURE_NAMES, N_FEATURES, extract_features
+
+MIN_EVENTS = 2
+PER_PID_CAP = 50
 
 
-def fetch_events(db_path, start_ts, end_ts):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+class Recorder:
+    has_autoencoder = False
+    alerting = False
+    mode = "recorder"
 
-    cursor.execute(
-        "SELECT ts, pid, ppid, uid, comm, type, detail FROM events "
-        "WHERE ts >= ? AND ts <= ? ORDER BY ts ASC",
-        (start_ts, end_ts),
-    )
-    rows = cursor.fetchall()
-    conn.close()
+    def __init__(self):
+        self.last = None
 
-    events = []
-
-    for row in rows:
-        events.append({
-            "ts": row[0],
-            "pid": row[1],
-            "ppid": row[2],
-            "uid": row[3],
-            "comm": row[4],
-            "type": row[5],
-            "detail": row[6],
-        })
-
-    return events
+    def score(self, vec):
+        self.last = list(vec)
+        return {"iforest_score": None, "recon_error": None, "is_anomaly": False}
 
 
-def build_process_states(events):
-    processes = {}
+def featurizer(boot_epoch):
+    if boot_epoch is None:
+        return extract_features
 
-    for event in events:
-        pid = event["pid"]
+    def with_capture_hour(state, depth):
+        hour = time.localtime(boot_epoch + state.last_ts).tm_hour
+        return extract_features(state, depth, hour=hour)
 
-        if pid not in processes:
-            processes[pid] = {
-                "ppid": event["ppid"],
-                "uid": event["uid"],
-                "exec_count": 0,
-                "connect_count": 0,
-                "file_write_count": 0,
-                "distinct_files_written": set(),
-                "distinct_dst": set(),
-                "ptrace_count": 0,
-                "setuid_count": 0,
-                "ran_as_root": event["uid"] == 0,
-                "event_timestamps": [],
-                "first_ts": event["ts"],
-                "last_ts": event["ts"],
-                "distinct_syscall_types": set(),
-            }
-
-        proc = processes[pid]
-
-        proc["event_timestamps"].append(event["ts"])
-        proc["first_ts"] = min(proc["first_ts"], event["ts"])
-        proc["last_ts"] = max(proc["last_ts"], event["ts"])
-        proc["distinct_syscall_types"].add(event["type"])
-
-        if event["type"] == "EXEC":
-            proc["exec_count"] += 1
-
-        elif event["type"] == "CONNECT":
-            proc["connect_count"] += 1
-            proc["distinct_dst"].add(event["detail"])
-
-        elif event["type"] == "OPEN":
-            proc["file_write_count"] += 1
-            proc["distinct_files_written"].add(event["detail"])
-
-        elif event["type"] == "PTRACE":
-            proc["ptrace_count"] += 1
-
-        elif event["type"] == "SETUID":
-            proc["setuid_count"] += 1
-
-    for pid, proc in processes.items():
-        proc["lifetime_s"] = proc["last_ts"] - proc["first_ts"]
-        proc["ts"] = proc["first_ts"]
-
-        proc["distinct_files_written"] = len(
-            proc["distinct_files_written"]
-        )
-
-        proc["distinct_dst"] = len(proc["distinct_dst"])
-
-        proc["distinct_syscall_types"] = len(
-            proc["distinct_syscall_types"]
-        )
-
-    return processes
+    return with_capture_hour
 
 
-def compute_depths(processes):
-    depths = {}
-
-    def get_depth(pid, visited):
-        if pid in depths:
-            return depths[pid]
-
-        if pid not in processes or pid in visited:
-            return 0
-
-        visited.add(pid)
-
-        ppid = processes[pid]["ppid"]
-        parent_depth = get_depth(ppid, visited)
-
-        depth = parent_depth + 1
-
-        depths[pid] = depth
-        return depth
-
-    for pid in processes:
-        get_depth(pid, set())
-
-    return depths
+def read_lines(path):
+    with open(path, "r", encoding="utf-8") as stream:
+        for line in stream:
+            line = line.strip()
+            if line:
+                yield line
 
 
-def capture_baseline(db_path, start_ts, end_ts):
-    events = fetch_events(db_path, start_ts, end_ts)
+def replay_vectors(path, boot_epoch=None, min_events=MIN_EVENTS, per_pid_cap=PER_PID_CAP):
+    recorder = Recorder()
+    engine = Engine(anomaly_model=recorder, featurize=featurizer(boot_epoch))
+    per_pid = defaultdict(list)
+    seen = Counter()
+    stats = {"lines": 0, "events": 0, "bad_lines": 0}
 
-    processes = build_process_states(events)
-    depths = compute_depths(processes)
+    for line in read_lines(path):
+        stats["lines"] += 1
+        recorder.last = None
+        try:
+            evt = json.loads(line)
+            engine.process_event(evt)
+        except (ValueError, TypeError):
+            stats["bad_lines"] += 1
+            continue
+        if recorder.last is None:
+            continue
+        stats["events"] += 1
+        pid = int(evt["pid"])
+        seen[pid] += 1
+        per_pid[pid].append(recorder.last)
 
     rows = []
-
-    for pid, proc in processes.items():
-        if len(proc["event_timestamps"]) <= 1:
+    kept = 0
+    for pid, vectors in per_pid.items():
+        if seen[pid] < min_events:
             continue
+        kept += 1
+        if per_pid_cap and len(vectors) > per_pid_cap:
+            picks = np.linspace(0, len(vectors) - 1, per_pid_cap).round().astype(int)
+            vectors = [vectors[i] for i in picks]
+        rows.extend(vectors)
 
-        depth = depths.get(pid, 0)
+    stats["processes"] = len(per_pid)
+    stats["processes_kept"] = kept
+    stats["rows"] = len(rows)
+    X = np.asarray(rows, dtype=float).reshape(-1, N_FEATURES)
+    return X, stats
 
-        features = extract_features(proc, depth)
-        rows.append(features)
 
-    return np.array(rows)
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="python -m scripts.capture_baseline",
+        description="Turn a captured sensor JSON lines file into a training matrix, through the same Engine path as live scoring.",
+    )
+    parser.add_argument("file", help="loader output saved as JSON lines")
+    parser.add_argument("-o", "--out", default="server/ml/baseline.npy")
+    parser.add_argument("--boot-epoch", type=float, default=None,
+                        help="wall clock time of boot on the capture machine, so hour_of_day is the capture hour")
+    parser.add_argument("--per-pid", type=int, default=PER_PID_CAP)
+    args = parser.parse_args(argv)
+
+    if args.boot_epoch is None:
+        print("capture: no --boot-epoch, hour_of_day uses this machine's clock now", file=sys.stderr)
+
+    X, stats = replay_vectors(args.file, boot_epoch=args.boot_epoch, per_pid_cap=args.per_pid)
+    if len(X) == 0:
+        print("capture: no usable rows, nothing written", file=sys.stderr)
+        return 1
+    np.save(args.out, X)
+    life = X[:, FEATURE_NAMES.index("lifetime_sec")]
+    print(
+        "capture: {lines} lines, {events} events, {bad_lines} bad lines, {processes} processes, "
+        "{processes_kept} with 2+ events, {rows} rows".format(**stats)
+    )
+    print(f"capture: lifetime_sec max {life.max():.1f} s, wrote {args.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

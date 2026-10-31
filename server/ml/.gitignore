@@ -1,0 +1,6 @@
+*.joblib
+*.keras
+*.npy
+threshold.json
+captures/
+last_report.txt

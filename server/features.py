@@ -1,7 +1,7 @@
 import posixpath
 import re
+import time
 from collections import deque
-from datetime import datetime
 
 MAX_TRACK = 256
 BURST_WINDOW = 5.0
@@ -12,13 +12,6 @@ _NEW_UID = re.compile(r"new_uid=(\d+)")
 _OLD_UID = re.compile(r"old_uid=(\d+)")
 _PROT = re.compile(r"prot=([r-])([w-])([x-])")
 
-# Deletes and renames that a normal desktop does in bursts on its own.
-# Every entry here was seen raising ransomware_burst during the 15 minute
-# idle run on the dev VM (2026-10-27): apt and the ESM hook clearing package
-# lists, dpkg staging files, Firefox and Thunderbird profile and cache churn.
-# These still count in unlink_count and rename_count, they just do not feed
-# destruction_burst. Anchored on the start of the path because the sensor
-# cuts each side of a RENAME at 59 chars, so the end may be missing.
 ROUTINE_CHURN = re.compile(
     r"^/var/lib/(apt|dpkg|ubuntu-advantage|snapd|PackageKit)/"
     r"|^/var/cache/"
@@ -64,9 +57,6 @@ class ProcessState:
         self.file_write_count = 0
         self.ptrace_count = 0
         self.setuid_count = 0
-        # setuid calls that went from a non-root uid to 0. cron and other
-        # root daemons call setuid(0) while already root before running a
-        # job; that is not an escalation and must not count here.
         self.root_gain_count = 0
         self.unlink_count = 0
         self.rename_count = 0
@@ -172,8 +162,6 @@ class ProcessState:
                 self.destruction_times.append(ts)
         elif etype == "RENAME":
             self.rename_count += 1
-            # Both sides must be routine. Renaming ~/Documents/a.docx to
-            # ~/.cache/a.locked still counts.
             old, new = rename_paths(detail)
             if not (is_routine_churn(old) and (new is None or is_routine_churn(new))):
                 self.destruction_times.append(ts)
@@ -229,47 +217,45 @@ FEATURE_NAMES = [
 ]
 
 N_FEATURES = len(FEATURE_NAMES)
+MIN_LIFETIME = 0.1
+BURST_RATE_WINDOW = 1.0
 
 
-def _burst_rate(timestamps):
-    if not timestamps:
-        return 0
-
+def burst_rate(timestamps, window=BURST_RATE_WINDOW):
+    times = sorted(timestamps)
+    best = 0
     left = 0
-    max_count = 0
-
-    for right in range(len(timestamps)):
-        while timestamps[right] - timestamps[left] > 1.0:
+    for right, ts in enumerate(times):
+        while ts - times[left] > window:
             left += 1
+        best = max(best, right - left + 1)
+    return best
 
-        current_count = right - left + 1
 
-        if current_count > max_count:
-            max_count = current_count
+def current_hour():
+    return time.localtime().tm_hour
 
-    return max_count
 
-def extract_features(proc, depth):
-
-    lifetime = max(proc.get("lifetime_s", 0.0), 0.1)
-    burst = _burst_rate(proc.get("event_timestamps", []))
-    hour = datetime.fromtimestamp(proc.get("ts", 0.0)).hour
-
+def extract_features(state, depth, hour=None):
+    lifetime = state.lifetime_s
+    divisor = max(lifetime, MIN_LIFETIME)
+    if hour is None:
+        hour = current_hour()
     return [
-        float(proc.get("distinct_syscall_types", 0)),
-        float(proc.get("exec_count", 0)),
+        float(len(state.types)),
+        float(state.exec_count),
         float(depth),
-        float(proc.get("file_write_count", 0)),
-        float(proc.get("file_write_count", 0)) / lifetime,
-        float(proc.get("connect_count", 0)),
-        float(proc.get("connect_count", 0)) / lifetime,
-        1.0 if proc.get("ran_as_root", False) else 0.0,
+        float(state.file_write_count),
+        state.file_write_count / divisor,
+        float(state.connect_count),
+        state.connect_count / divisor,
+        1.0 if state.ran_as_root else 0.0,
         float(lifetime),
-        float(burst),
+        float(burst_rate(state.event_times)),
         float(hour),
-        float(proc.get("uid", 0)),
-        float(proc.get("distinct_files_written", 0)),
-        float(proc.get("distinct_dst", 0)),
-        float(proc.get("ptrace_count", 0)),
-        float(proc.get("setuid_count", 0)),
+        float(state.uid),
+        float(state.distinct_files_written),
+        float(state.distinct_destinations),
+        float(state.ptrace_count),
+        float(state.setuid_count),
     ]
