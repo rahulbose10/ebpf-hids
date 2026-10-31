@@ -131,3 +131,53 @@ Paths from unlinkat, renameat and fchmodat can be relative (for example `cd /var
 `rm -rf` of a folder holding 25 or more files inside 5 seconds raises ransomware_burst at critical severity. Nothing in the rule tells a cleanup from an encryptor except which paths are involved.
 
 Processes that started before the sensor have no EXEC event, so their exe_name falls back to comm, which can be a thread name.
+
+# L3 anomaly layer
+
+## How to reproduce
+
+    pip install -r requirements.txt -r requirements-ml.txt
+    python -m scripts.train_ml --sweep --check samples/events.jsonl
+
+Seeds are fixed (baseline 7, attacks 99, split and forest 42), so a rerun on the same library versions gives the same numbers.
+
+## Synthetic baseline (Windows, 2026-10-31)
+
+    L3 training report
+      data source        synthetic (2500 rows, scripts/gen_baseline.py, seed 7)
+      train / holdout    2125 / 375
+      contamination      0.02
+      autoencoder        yes, threshold 1.3289 (99th percentile of training error)
+      holdout normal     forest 2.93% | autoencoder 0.80% | combined 3.20% flagged
+      synthetic attacks  forest 50.00% | autoencoder 72.00% | combined 82.00% flagged (100 rows, 5 kinds)
+      mean iforest score normal 0.1432 | attack 0.0362
+      lifetime_sec       training max 4.40 s
+      features never split on: exec_count (training std 0.000), ptrace_count (training std 0.000)
+      edge probe         500 connects on a median process: forest 0.155 (normal), autoencoder error 4841.1 vs threshold 1.33
+      score time         0.22 ms per event (sklearn decision_function on one row 6.02 ms)
+      contamination sweep, forest only, same holdout:
+        contamination 0.02 -> holdout false positives 2.93%
+        contamination 0.05 -> holdout false positives 4.00%
+        contamination 0.10 -> holdout false positives 8.27%
+      replay samples/events.jsonl: 160 events from 24 processes scored through the engine
+        flagged            forest 46.88% | autoencoder 79.38% | combined 81.88%
+        mean iforest score 0.0148
+        furthest from training (max z): lifetime_sec 142.6, setuid_count 78.0, connect_rate 34.3
+
+## What these numbers do not show
+
+The holdout false positive rate only says the model learned the synthetic distribution. It says nothing about a real host, and the replay of samples/events.jsonl shows that: most real events get flagged and lifetime_sec lands far outside training, because the synthetic processes never live longer than 4.4 s while gnome-shell and Firefox run for minutes. That is train/serve skew, and it is why a synthetic model is gauge only.
+
+The synthetic attacks are made by the same generator code, so detecting them proves the pipeline works end to end, not that real attacks look like this.
+
+The features the forest never splits on had zero variance in training. exec_count is always 1 because every synthetic process execs once, and nothing benign in the generator calls ptrace. Real activity moves both: shells exec many children and debuggers ptrace.
+
+The forest only cuts between the smallest and largest value it saw in training, so a value far beyond the training range scores like a value at the edge of it. The `edge probe` line in the report shows this: 500 connects on an otherwise median process, scored by the forest and by the autoencoder. That is the reason the verdict is forest OR autoencoder.
+
+## Scoring cost
+
+The engine scores on every event, and sklearn's decision_function has a fixed cost per call that is too slow for bursts. score() walks the 200 trees as numpy arrays for single rows and runs the autoencoder's dense layers as plain matrix products. tests/test_ml_anomaly.py checks the single-row path against sklearn. The `score time` line in the report has both timings. TODO: run the report on the VM too.
+
+## Real host baseline
+
+TODO: capture on the VM, train with --baseline, and record the before and after flag rate on the same replay.

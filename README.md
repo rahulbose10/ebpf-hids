@@ -51,3 +51,26 @@ Live, on the Linux VM, from the repo root with the venv active:
     sudo ./loader/loader | python -m server.ingest
 
 Only the loader needs root. Rules live in server/rules/*.yml and are loaded at start; a rule with a typo is skipped and reported, the others still load. Rule layer numbers and how they were measured are in docs/results.md.
+
+## L3 anomaly layer (Python, any OS)
+
+Learns what normal processes look like and scores every event's process against that. It knows nothing about attacks. From the repo root, venv active:
+
+    pip install -r requirements.txt -r requirements-ml.txt
+    python -m scripts.train_ml --sweep --check samples/events.jsonl
+
+That trains on 2500 synthetic normal processes, prints false positives on held-out normal rows, detection on 100 synthetic attacks, which features the forest never splits on, and how the real sample events score. Models go to server/ml/ and are not committed; every machine trains its own.
+
+The autoencoder is optional. `pip install tensorflow` (Python 3.12 or older on Windows) and train again; without it everything runs on the Isolation Forest alone.
+
+A model trained on synthetic data is gauge only: it scores, the console shows the scores, but it raises no alerts, because it flags most real processes (see docs/results.md). To train on the real host, capture 15 minutes or more of ordinary use on the VM with no attack tests running:
+
+    python3 -c "import time; print(round(time.time() - time.monotonic()))"
+    mkdir -p server/ml/captures
+    sudo ./loader/loader > server/ml/captures/baseline.jsonl
+    python3 -m scripts.capture_baseline server/ml/captures/baseline.jsonl --boot-epoch <number from the first line>
+    python3 -m scripts.train_ml --baseline server/ml/baseline.npy --check samples/events.jsonl
+
+A model trained with --baseline is allowed to alert. That assumes the host was clean while capturing; if it was already compromised, the model learns the compromise as normal.
+
+The engine never imports this code. The backend loads the model with server.ml_anomaly.load_model() and hands it to Engine(anomaly_model=...). load_model() returns None and prints why if the files are missing, TensorFlow is missing, or the feature list in threshold.json does not match FEATURE_NAMES.
