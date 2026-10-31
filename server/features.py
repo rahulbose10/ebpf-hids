@@ -1,6 +1,7 @@
 import posixpath
 import re
 from collections import deque
+from datetime import datetime
 
 MAX_TRACK = 256
 BURST_WINDOW = 5.0
@@ -206,3 +207,69 @@ class ProcessState:
             "depth": depth,
             "lifetime_s": self.lifetime_s,
         }
+
+
+FEATURE_NAMES = [
+    "distinct_syscall_types",
+    "exec_count",
+    "exec_depth",
+    "file_write_count",
+    "file_write_rate",
+    "connect_count",
+    "connect_rate",
+    "ran_as_root",
+    "lifetime_sec",
+    "burst_rate",
+    "hour_of_day",
+    "uid",
+    "distinct_files_written",
+    "distinct_dst",
+    "ptrace_count",
+    "setuid_count",
+]
+
+N_FEATURES = len(FEATURE_NAMES)
+
+
+def _burst_rate(timestamps):
+    if not timestamps:
+        return 0
+
+    left = 0
+    max_count = 0
+
+    for right in range(len(timestamps)):
+        while timestamps[right] - timestamps[left] > 1.0:
+            left += 1
+
+        current_count = right - left + 1
+
+        if current_count > max_count:
+            max_count = current_count
+
+    return max_count
+
+def extract_features(proc, depth):
+
+    lifetime = max(proc.get("lifetime_s", 0.0), 0.1)
+    burst = _burst_rate(proc.get("event_timestamps", []))
+    hour = datetime.fromtimestamp(proc.get("ts", 0.0)).hour
+
+    return [
+        float(proc.get("distinct_syscall_types", 0)),
+        float(proc.get("exec_count", 0)),
+        float(depth),
+        float(proc.get("file_write_count", 0)),
+        float(proc.get("file_write_count", 0)) / lifetime,
+        float(proc.get("connect_count", 0)),
+        float(proc.get("connect_count", 0)) / lifetime,
+        1.0 if proc.get("ran_as_root", False) else 0.0,
+        float(lifetime),
+        float(burst),
+        float(hour),
+        float(proc.get("uid", 0)),
+        float(proc.get("distinct_files_written", 0)),
+        float(proc.get("distinct_dst", 0)),
+        float(proc.get("ptrace_count", 0)),
+        float(proc.get("setuid_count", 0)),
+    ]
