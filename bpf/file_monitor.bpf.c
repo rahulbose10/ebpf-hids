@@ -2,6 +2,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include "common.h"
+#include "path.h"
 
 #define WRITE_FLAGS 0x643
 
@@ -58,19 +59,28 @@ static __always_inline int emit_read(const char *filename)
 	return 0;
 }
 
-static __always_inline int emit_open(const char *filename, long flags)
+static __always_inline int emit_open(int dfd, const char *filename, long flags)
 {
+	struct path_scratch *s;
+	const char *p;
 	struct event *e;
 
 	if (!(flags & WRITE_FLAGS))
 		return emit_read(filename);
+
+	s = get_scratch();
+	if (!s)
+		return 0;
+	p = abs_path(s, dfd, filename);
+	if (!p)
+		return 0;
 
 	e = RESERVE_EVENT();
 	if (!e)
 		return 0;
 
 	fill_header(e, EVT_OPEN);
-	bpf_probe_read_user_str(&e->detail, sizeof(e->detail), filename);
+	bpf_probe_read_kernel_str(&e->detail, sizeof(e->detail), p);
 
 	SUBMIT_EVENT(e);
 	return 0;
@@ -79,11 +89,11 @@ static __always_inline int emit_open(const char *filename, long flags)
 SEC("tracepoint/syscalls/sys_enter_openat")
 int handle_openat(struct trace_event_raw_sys_enter *ctx)
 {
-	return emit_open((const char *)ctx->args[1], (long)ctx->args[2]);
+	return emit_open((int)ctx->args[0], (const char *)ctx->args[1], (long)ctx->args[2]);
 }
 
 SEC("tracepoint/syscalls/sys_enter_open")
 int handle_open(struct trace_event_raw_sys_enter *ctx)
 {
-	return emit_open((const char *)ctx->args[0], (long)ctx->args[1]);
+	return emit_open(AT_FDCWD_VAL, (const char *)ctx->args[0], (long)ctx->args[1]);
 }

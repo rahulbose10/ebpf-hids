@@ -30,7 +30,7 @@ Status lines ("sensor up", "dropped events") go to stderr, never stdout.
 CONNECT and BIND: rsplit(":", 1), then strip [ and ] from the address.
 RENAME: split(" -> ", 1).
 MPROTECT: key=value pairs.
-Paths from unlinkat, renameat and fchmodat can be relative to an open directory, and fchmod gives a basename only. Never assume a path is complete or absolute.
+OPEN, UNLINK, RENAME and CHMOD paths are made absolute in the kernel from the directory fd or the cwd, crossing mount points. They are not normalized, so . and .. stay as written, and a path deeper than 32 directories or longer than 511 characters loses its top part. EXEC and READ detail is still the path as the program passed it.
 comm is at most 15 chars and can be a thread name, e.g. "DNS Res~er #12".
 detail can be empty when the kernel could not read the string from the process.
 
