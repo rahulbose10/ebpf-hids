@@ -323,3 +323,14 @@
 - Trained on sessions 1 and 2, checked on session 3 which it never saw: 3.43% of events flagged, from 12 of 633 processes, mostly LibreOffice and Rhythmbox, which were new to it. Holdout false alarms 1.22% to 2.43% over the extra seeds, synthetic attacks 78% to 90%. 0.35 ms per event on the VM.
 - That is still 20 ML alerts in 15 minutes of normal use, so ML-ANOM stays off by default and the score is a gauge. The forest flagged nothing in the final run; detection comes from the autoencoder and the limits.
 - Still open: privesc only 37.5% for the model (L2 suid_shell covers it), L4 loader must pass alerting=False unless --ml-alerting, more varied capture sessions, six event types still outside the vector.
+
+## 2026-11-01 - L4 backend, review and integration
+- Took Rishabh's backend as delivered and committed it under his name. It could not run from the repo root, ignored HIDS_SECRET_KEY, seeded no user, and LIMIT -1 skipped the 1000 cap. Fixed those.
+- Wired it to the L2 engine with a reorder buffer on kts and the ioc, incidents, responder fan-out. It loads the L3 model from server/ml with alerting off unless --ml-alerting, and starts without it when the files or packages are missing.
+- Engine score rows now keep ae_anomaly, limit_anomaly and over_limit, so Detection shows why a row was flagged.
+- Console logs in for real, reads incidents from the API, and the gauge shows autoencoder error over threshold.
+- Replay on Windows, no model loaded there: ingest: 160 events, 3 alerts, 0 bad lines, 0 engine errors, 0 own events dropped, 0 reordered, 0 late, 0 fan-out errors, 0 scored by ML, 0 flagged
+- Live on the VM, about 16 minutes by the wall clock, trained model loaded with alerting off: ingest: 29420 events, 11 alerts, 0 bad lines, 0 engine errors, 10856 own events dropped, 0 reordered, 0 late, 0 fan-out errors, 29420 scored by ML, 20392 flagged. The loader reported dropped events: 0.
+- The model flagged 20392 of 29420 events (69.3%) on an ordinary desktop session, so ML stays gauge only until the baseline or threshold is recalibrated.
+- Two of the 11 alerts, code_injection_rwx and ransomware_burst, came from the node process of the console dev server and are not attacks.
+- Still open: Phase 2 alerting, reports, navigator, users, iocs and enforcement endpoints. Threat Intel still shows sample data. Anomaly scores and their counts live in memory only and reset on restart. No event retention.
