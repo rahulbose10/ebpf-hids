@@ -59,9 +59,13 @@ Learns what normal processes look like and scores every event's process against 
     pip install -r requirements.txt -r requirements-ml.txt
     python -m scripts.train_ml --sweep --check samples/events.jsonl
 
-That trains on 2500 synthetic normal processes, prints false positives on held-out normal rows, detection on 100 synthetic attacks, which features the forest never splits on, and how the real sample events score. Models go to server/ml/ and are not committed; every machine trains its own.
+That trains on 2500 synthetic normal processes and prints false positives on held-out normal rows, detection on 100 synthetic attacks split by kind, and which processes in the sample got flagged and why. Models go to server/ml/ and are not committed; every machine trains its own. Add --repeat 4 to retrain with four more seeds and print the spread, so one lucky seed never ends up in a report.
 
-The autoencoder is optional. `pip install tensorflow` (Python 3.12 or older on Windows) and train again; without it everything runs on the Isolation Forest alone.
+An event is flagged if any of three checks says so. The Isolation Forest catches unusual combinations inside the range it saw in training. Five small autoencoders, averaged, catch rows they cannot rebuild. The limits catch anything 1.5 times past the largest value the baseline ever showed, on exec_count, ptrace_count, setuid_count, the write and connect rates, burst_rate and new destinations per second. The forest cannot see past its training range, which is why the limits exist.
+
+Before the forest and the autoencoders see a row, counts and rates go through log1p so one busy Firefox does not squash everything else. Counts that only grow with age (lifetime, total writes, total connects, distinct files and destinations) are capped at the baseline maximum, so an old process is not suspicious for being old. A feature that never changed in training is left out; on a capture made inside one hour that is hour_of_day, which would otherwise flag every event outside that hour. uid is always left out because sudo flips it between 1000 and 0 inside one process, and ran_as_root already says the process became root.
+
+TensorFlow is only needed to train the autoencoders (`pip install tensorflow`, Python 3.12 or older on Windows). Their weights are saved as plain arrays in autoencoder.npz, so loading and scoring never need it. Without TensorFlow, training runs the forest and the limits only.
 
 A model trained on synthetic data is gauge only: it scores, the console shows the scores, but it raises no alerts, because it flags most real processes (see docs/results.md). To train on the real host, capture 15 minutes or more of ordinary use on the VM with no attack tests running:
 
@@ -69,8 +73,10 @@ A model trained on synthetic data is gauge only: it scores, the console shows th
     mkdir -p server/ml/captures
     sudo ./loader/loader > server/ml/captures/baseline.jsonl
     python3 -m scripts.capture_baseline server/ml/captures/baseline.jsonl --boot-epoch <number from the first line>
-    python3 -m scripts.train_ml --baseline server/ml/baseline.npy --check samples/events.jsonl
+    python3 -m scripts.train_ml --baseline server/ml/baseline.npy --repeat 4 --check samples/events.jsonl
+
+The false positive number that counts comes from a second capture the model never saw. Record another session at a different time and pass it to --check.
 
 A model trained with --baseline is allowed to alert. That assumes the host was clean while capturing; if it was already compromised, the model learns the compromise as normal.
 
-The engine never imports this code. The backend loads the model with server.ml_anomaly.load_model() and hands it to Engine(anomaly_model=...). load_model() returns None and prints why if the files are missing, TensorFlow is missing, or the feature list in threshold.json does not match FEATURE_NAMES.
+The engine never imports this code. The backend loads the model with server.ml_anomaly.load_model() and hands it to Engine(anomaly_model=...). load_model() returns None and prints why if the files are missing, the model was saved by an older version of ml_anomaly.py, or the feature list in threshold.json does not match FEATURE_NAMES. score() also returns limit_anomaly and over_limit, which the engine ignores and a console can show.
