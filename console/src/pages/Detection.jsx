@@ -198,7 +198,7 @@ function Detection() {
                 </Field>
                 <Field label="ATT&CK">
                   {picked.technique || "-"}
-                  {info.technique ? ` · ${info.technique}` : ""}
+                  {info.technique && info.technique !== picked.technique ? ` · ${info.technique}` : ""}
                 </Field>
                 {info.tactic && <Field label="Tactic">{info.tactic}</Field>}
                 {info.event && <Field label="Trigger event">{formatEvent(info.event)}</Field>}
