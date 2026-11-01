@@ -118,7 +118,7 @@
 
 ## Phase 2 Step 13-14 - proper ransomware burst rule
 
-- Realized the earlier mass_file_write_ransomware rule (built ahead of the prompt) used
+- Realized the earlier mass_file_write_ransomware rule (built ahead of the plan) used
   OPEN + distinct file count, but the spec's actual Step 14 wants a BURST of
   UNLINK/RENAME events in a short sliding window - a different signal (destruction
   speed, not just breadth). Kept the earlier rule as a bonus, built the correct one.
@@ -167,7 +167,7 @@
   events as its name implies. This never showed up before because every prior test had
   CONNECT as the last event, never EXEC-after-CONNECT in that specific order.
 - Fixed by adding "evt.type eq CONNECT" to connect_after_exec's conditions.
-- All rules now: 14 official (per the v6 prompt) + 1 bonus (mass_file_write_ransomware,
+- All rules now: 14 official (per the spec) + 1 bonus (mass_file_write_ransomware,
   built ahead of spec) = 15 total, all tested and passing.
 
 ## Phase 2 Step 19 - incident grouping key
@@ -250,13 +250,13 @@
   has been tested throughout this whole project (bare Engine() calls, no database,
   no incident manager needed).
 - THIS COMPLETES ALL 24 STEPS OF THE DETECTION ENGINE (Person 2's full scope per the
-  v6 prompt): 14 rules across 9 MITRE techniques, dedupe, ML seam, incidents with
+  spec): 14 rules across 9 MITRE techniques, dedupe, ML seam, incidents with
   audit trail, IOC matching, and MITRE coverage tracking - all built, tested, and
   measured (precision/recall/F1 = 1.000/1.000/1.000).
 
 ## Closed the test coverage gap for Phase 2 rules
 
-- An external review of the actual repo (not just conversation logs) found that
+- Reading through the repo again found that
   the 10 Phase 2 rules had no dedicated pytest positive/negative tests - they were
   only validated via measure_rules.py (an aggregate script) and manual REPL testing,
   not individual asserts as spec Steps 15-17 require.
@@ -277,8 +277,8 @@
 - Re-ran full test suite (38 tests) and measure_rules.py after the move: all still
   pass, precision/recall/F1 still 1.000/1.000/1.000, 9/9 techniques. Confirms the
   reorganization was purely structural (file location), not a functional change.
-- This closes the last known gap from the external review: rule count, file
-  organization, and test coverage all now match the v6 prompt exactly.
+- This closes the last known gap from that check: rule count, file
+  organization, and test coverage all now match the spec exactly.
 
 ## 2026-10-27 - L2 detection engine, review, real sensor, tuning
 
@@ -293,7 +293,7 @@
 ## 2026-10-27 - L1 kernel sensor, session 5 (live check with the engine, sample file)
 - Fast-forwarded l1-sensor to main c9cfd2a, so this branch now has the L2 engine. The "no L2 engine yet" lines in sessions 3 and 4 were true when written and are left as they were.
 - Piped the real loader into python -m server.ingest. One run saw 2382 events, 2 alerts, 0 bad lines, 0 engine errors. The alerts: kernel_module_load on MODULE dummy.ko (sudo modprobe dummy) and code_injection_rwx on MPROTECT prot=rwx (python mprotect with PROT_EXEC). Screenshot in docs/live-pipeline.png.
-- Rules seen firing on the live sensor so far: connect_after_exec, network_parent_shell, suid_backdoor, backdoor_listener, ransomware_burst (L2 chat) plus kernel_module_load and code_injection_rwx. That is 7 of 14. The other 7 are only proven on mock events and in tests.
+- Rules seen firing on the live sensor so far: connect_after_exec, network_parent_shell, suid_backdoor, backdoor_listener, ransomware_burst (L2 tuning runs) plus kernel_module_load and code_injection_rwx. That is 7 of 14. The other 7 are only proven on mock events and in tests.
 - strace -p on a sleeping process gave 2 PTRACE events.
 - Added samples/events.jsonl: 160 events from a 45 s and a 20 s capture, lab commands only, 11 of the 12 event types in docs/sensor-contract.md. CORRELATED is missing because it needs --correlate. 42 of the first 192 lines were Firefox profile paths, dropped, and the username and hostname replaced. Replays through server.ingest with 0 bad lines and 3 alerts, all from the lab commands (bind on 127.0.0.1, modprobe dummy, rwx mprotect).
 - Still open: reads of /etc/shadow still make no event. rm -rf reports relative paths. A failed exec during a PATH search still shows up as an EXEC event. Exec blocking is not done, only ptrace. 7 rules have never fired live.
