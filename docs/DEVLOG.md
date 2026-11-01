@@ -331,6 +331,7 @@
 - Console logs in for real, reads incidents from the API, and the gauge shows autoencoder error over threshold.
 - Replay on Windows, no model loaded there: ingest: 160 events, 3 alerts, 0 bad lines, 0 engine errors, 0 own events dropped, 0 reordered, 0 late, 0 fan-out errors, 0 scored by ML, 0 flagged
 - Live on the VM, about 16 minutes by the wall clock, trained model loaded with alerting off: ingest: 29420 events, 11 alerts, 0 bad lines, 0 engine errors, 10856 own events dropped, 0 reordered, 0 late, 0 fan-out errors, 29420 scored by ML, 20392 flagged. The loader reported dropped events: 0.
-- The model flagged 20392 of 29420 events (69.3%) on an ordinary desktop session, so ML stays gauge only until the baseline or threshold is recalibrated.
+- The model flagged 20392 of 29420 events (69.3%) in that run, and 4789 of 6393 (74.9%) in a second live run with no console open.
+- Replaying L3's session 3 capture through the same server: 5449 scored by ML, 187 flagged (3.43%), the same as L3's own replay. So L4 scores the way L3 does, and the gap is in the live data, which the training captures do not cover yet. ML stays gauge only until they do.
 - Two of the 11 alerts, code_injection_rwx and ransomware_burst, came from the node process of the console dev server and are not attacks.
 - Still open: Phase 2 alerting, reports, navigator, users, iocs and enforcement endpoints. Threat Intel still shows sample data. Anomaly scores and their counts live in memory only and reset on restart. No event retention.
