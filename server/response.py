@@ -4,7 +4,7 @@ import threading
 import time
 from collections import deque
 
-import config
+from server import config
 
 DECISIONS = ("executed", "dry_run", "guard_blocked")
 

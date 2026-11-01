@@ -2,16 +2,17 @@ import hashlib
 import hmac
 import os
 import secrets
-import time
 from functools import wraps
 
 from flask import g, request, session
 
-import db
+from server import db
 
 ITERATIONS = 200_000
 
 ROLES = ("viewer", "analyst", "admin")
+
+_dummy = None
 
 
 def role_at_least(role, minimum):
@@ -44,23 +45,18 @@ def create_user(username, password, role="viewer"):
         raise ValueError("unknown role: " + str(role))
 
     password_hash, salt = hash_password(password)
-    conn = db.get_connection()
-    conn.execute(
-        "INSERT INTO users (username, password_hash, salt, role, created_at) VALUES (?, ?, ?, ?, ?)",
-        (username, password_hash, salt, role, time.time())
-    )
-    conn.commit()
-    conn.close()
+    db.insert_user(username, password_hash, salt, role)
 
 
 def get_user(username):
-    conn = db.get_connection()
-    row = conn.execute(
-        "SELECT * FROM users WHERE username = ?",
-        (username,)
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return db.get_user(username)
+
+
+def _burn_same_time(password):
+    global _dummy
+    if _dummy is None:
+        _dummy = hash_password("no-such-user")
+    verify_password(password, _dummy[0], _dummy[1])
 
 
 def check_login(username, password):
@@ -69,6 +65,7 @@ def check_login(username, password):
 
     user = get_user(username)
     if user is None:
+        _burn_same_time(password)
         return None
     if not verify_password(password, user["password_hash"], user["salt"]):
         return None
@@ -114,8 +111,9 @@ def check_api_key(token):
 
 
 def do_login(user):
+    session.clear()
+    session.permanent = True
     session["username"] = user["username"]
-    session["role"] = user["role"]
 
 
 def do_logout():
@@ -129,7 +127,11 @@ def current_user():
 
     user = None
     if "username" in session:
-        user = {"username": session["username"], "role": session["role"], "kind": "session"}
+        row = get_user(session["username"])
+        if row is None:
+            session.clear()
+        else:
+            user = {"username": row["username"], "role": row["role"], "kind": "session"}
     else:
         token = request.headers.get("X-API-Key")
         if token:

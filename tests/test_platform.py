@@ -1,5 +1,4 @@
-import auth
-import db
+from server import auth, db
 
 ANALYST_ENDPOINTS = [
     ("post", "/api/rules/ptrace_then_exec/toggle", None),

@@ -2,13 +2,14 @@ import json
 import sqlite3
 import time
 
-import config
+from server import config
 
 
 def get_connection():
-    conn = sqlite3.connect(config.DATABASE_PATH)
+    conn = sqlite3.connect(config.DATABASE_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
 
@@ -126,8 +127,53 @@ def init_db():
         )
     """)
 
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_events_pid ON events (pid, id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_incident ON alerts (incident_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_technique ON alerts (technique)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_incident ON incident_audit (incident_id)")
+
     conn.commit()
     conn.close()
+
+
+def insert_user(username, password_hash, salt, role):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO users (username, password_hash, salt, role, created_at) VALUES (?, ?, ?, ?, ?)",
+        (username, password_hash, salt, role, time.time())
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user(username):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def count_users():
+    conn = get_connection()
+    n = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    conn.close()
+    return n
+
+
+def set_user_role(username, role):
+    conn = get_connection()
+    changed = conn.execute("UPDATE users SET role = ? WHERE username = ?", (role, username)).rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
+
+
+def delete_user(username):
+    conn = get_connection()
+    deleted = conn.execute("DELETE FROM users WHERE username = ?", (username,)).rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def insert_event(ts, pid, ppid, uid, comm, type_, detail):
@@ -155,12 +201,12 @@ def recent_events(limit=100, pid=None):
     conn = get_connection()
     if pid is not None:
         rows = conn.execute(
-            "SELECT * FROM events WHERE pid = ? ORDER BY ts DESC LIMIT ?",
+            "SELECT * FROM events WHERE pid = ? ORDER BY id DESC LIMIT ?",
             (pid, limit)
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM events ORDER BY ts DESC LIMIT ?",
+            "SELECT * FROM events ORDER BY id DESC LIMIT ?",
             (limit,)
         ).fetchall()
     conn.close()
@@ -170,7 +216,7 @@ def recent_events(limit=100, pid=None):
 def recent_alerts(limit=300):
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM alerts ORDER BY ts DESC LIMIT ?",
+        "SELECT * FROM alerts ORDER BY id DESC LIMIT ?",
         (limit,)
     ).fetchall()
     conn.close()
@@ -204,11 +250,16 @@ def all_processes(limit=1000):
 def recent_anomaly_scores(limit=300):
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM anomaly_scores ORDER BY ts DESC LIMIT ?",
+        "SELECT * FROM anomaly_scores ORDER BY id DESC LIMIT ?",
         (limit,)
     ).fetchall()
     conn.close()
-    return [dict(row) for row in rows]
+    scores = []
+    for row in rows:
+        score = dict(row)
+        score["is_anomaly"] = bool(score["is_anomaly"])
+        scores.append(score)
+    return scores
 
 
 def counts():
@@ -254,7 +305,7 @@ def attach_alert_to_incident(alert_id, incident_id):
 def list_incidents(limit=200):
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM incidents ORDER BY last_seen DESC LIMIT ?",
+        "SELECT * FROM incidents ORDER BY id DESC LIMIT ?",
         (limit,)
     ).fetchall()
     conn.close()
@@ -270,7 +321,7 @@ def get_incident(incident_id):
 
     incident = dict(row)
     alert_rows = conn.execute(
-        "SELECT * FROM alerts WHERE incident_id = ? ORDER BY ts ASC",
+        "SELECT * FROM alerts WHERE incident_id = ? ORDER BY id ASC",
         (incident_id,)
     ).fetchall()
     conn.close()
@@ -359,58 +410,6 @@ def evaluation_numbers():
         "anomalies_flagged": anomalies_flagged,
     }
 def insert_api_key(name, role):
-    conn = get_connection()
-    cur = conn.execute(
-        "INSERT INTO api_keys (key_hash, name, role, created_at) VALUES ('', ?, ?, ?)",
-        (name, role, time.time())
-    )
-    key_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return key_id
-
-
-def set_api_key_hash(key_id, key_hash):
-    conn = get_connection()
-    conn.execute("UPDATE api_keys SET key_hash = ? WHERE id = ?", (key_hash, key_id))
-    conn.commit()
-    conn.close()
-
-
-def get_api_key(key_id):
-    conn = get_connection()
-    row = conn.execute("SELECT * FROM api_keys WHERE id = ?", (key_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def list_api_keys():
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT id, name, role, created_at, last_used FROM api_keys ORDER BY id"
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
-def delete_api_key(key_id):
-    conn = get_connection()
-    cur = conn.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
-    deleted = cur.rowcount > 0
-    conn.commit()
-    conn.close()
-    return deleted
-
-
-def touch_api_key(key_id):
-    conn = get_connection()
-    conn.execute("UPDATE api_keys SET last_used = ? WHERE id = ?", (time.time(), key_id))
-    conn.commit()
-    conn.close()
-
-
-    def insert_api_key(name, role):
-        pass
     conn = get_connection()
     cur = conn.execute(
         "INSERT INTO api_keys (key_hash, name, role, created_at) VALUES ('', ?, ?, ?)",

@@ -1,19 +1,15 @@
-import os
-import sys
-
 import pytest
 
-SERVER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server")
-sys.path.insert(0, SERVER_DIR)
-
-import config
-import auth
-from app import create_app
+from server import auth, config
+from server.app import create_app
 
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATABASE_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(config, "SECRET_KEY_FILE", tmp_path / "secret.key")
+    monkeypatch.setattr(config, "SEED_PASS", "seedpass")
+    monkeypatch.delenv("HIDS_SECRET_KEY", raising=False)
 
     app = create_app(start_ingest=False)
     app.config["TESTING"] = True

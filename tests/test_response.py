@@ -2,8 +2,7 @@ import os
 
 import pytest
 
-import config
-import response
+from server import config, response
 
 
 class FakeKiller:

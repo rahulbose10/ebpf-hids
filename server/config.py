@@ -1,43 +1,34 @@
 import os
+import secrets
 import sys
+from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = Path(os.environ.get("HIDS_DATA_DIR", BASE_DIR / "data"))
+MODEL_DIR = Path(os.environ.get("HIDS_MODEL_DIR", BASE_DIR / "server" / "ml"))
+RULES_DIR = BASE_DIR / "server" / "rules"
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-MODEL_DIR = os.path.join(BASE_DIR, "models")
-RULES_DIR = os.path.join(BASE_DIR, "server", "rules")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(MODEL_DIR, exist_ok=True)
+DATABASE_PATH = DATA_DIR / "hids.db"
+SECRET_KEY_FILE = DATA_DIR / "secret.key"
 
-DB_PATH = os.path.join(DATA_DIR, "hids.db")
-SECRET_KEY = os.environ.get("HIDS_SECRET_KEY", "dev-secret-key-change-in-production")
+HOST = os.environ.get("HIDS_HOST", "127.0.0.1")
+PORT = int(os.environ.get("HIDS_PORT", "5000"))
 SESSION_HOURS = 12
 
 SEED_USER = os.environ.get("HIDS_ADMIN_USER", "admin")
-SEED_PASS = os.environ.get("HIDS_ADMIN_PASS", "admin123")
+SEED_PASS = os.environ.get("HIDS_ADMIN_PASS")
+
+MAX_LIMIT = 1000
 
 SIM_WHITELIST = {
-    "revshell": os.path.join(BASE_DIR, "simulations", "sim_revshell.sh"),
-    "ptrace": os.path.join(BASE_DIR, "simulations", "sim_ptrace.sh"),
-    "suid": os.path.join(BASE_DIR, "simulations", "sim_suid.sh"),
-    "recon": os.path.join(BASE_DIR, "simulations", "sim_recon.sh")
+    "demo": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_demo.py")],
 }
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-DATABASE_PATH = os.path.join(BASE_DIR, "hids.db")
-
-SECRET_KEY = "dev-secret-change-me"
-
-PORT = 5000
-
-SIM_WHITELIST = {
-    "demo": [sys.executable, os.path.join(BASE_DIR, "simulations", "sim_demo.py")],
-}
-
 SIM_TIMEOUT_SECONDS = 30
+
 INCIDENT_STATUSES = ("open", "investigating", "resolved", "false_positive")
+
 RESPONSE_ENABLED = False
 RESPONSE_DRY_RUN = True
 RESPONSE_MIN_SEVERITY = "critical"
@@ -48,11 +39,12 @@ NEVER_KILL = {
     "systemd-journal", "systemd-logind", "systemd-udevd", "systemd-resolve",
     "systemd-network", "containerd-shim", "NetworkManager", "rsyslogd",
     "cron", "agetty", "login", "polkitd", "auditd",
-    "loader", "sensor",
+    "loader", "ips_enforce", "sensor",
 }
 
 MIN_SAFE_PID = 300
 RESPONSE_LOG_MAX = 500
+
 ALERT_ENABLED = False
 ALERT_MIN_SEVERITY = "high"
 ALERT_THROTTLE_SECONDS = 300
@@ -61,3 +53,22 @@ ALERT_WEBHOOK_TIMEOUT = 5
 ALERT_SYSLOG_ENABLED = False
 ALERT_SYSLOG_HOST = "127.0.0.1"
 ALERT_SYSLOG_PORT = 514
+
+
+def load_secret_key():
+    from_env = os.environ.get("HIDS_SECRET_KEY")
+    if from_env:
+        return from_env
+    try:
+        key = SECRET_KEY_FILE.read_text(encoding="ascii").strip()
+        if key:
+            return key
+    except FileNotFoundError:
+        pass
+    key = secrets.token_hex(32)
+    SECRET_KEY_FILE.write_text(key, encoding="ascii")
+    try:
+        os.chmod(SECRET_KEY_FILE, 0o600)
+    except OSError:
+        pass
+    return key

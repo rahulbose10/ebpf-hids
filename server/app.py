@@ -1,12 +1,12 @@
+import secrets
 import subprocess
+import sys
 import threading
+from datetime import timedelta
 
 from flask import Flask, request
 
-import auth
-import config
-import db
-import rules_registry
+from server import auth, config, db, rules_registry
 
 
 def _start_ingest_thread():
@@ -21,26 +21,44 @@ def _run_simulation(command):
     try:
         subprocess.run(command, timeout=config.SIM_TIMEOUT_SECONDS, capture_output=True)
     except Exception as error:
-        print("simulation failed:", error)
+        print("simulation failed:", error, file=sys.stderr)
+
+
+def _seed_admin():
+    if db.count_users() > 0:
+        return
+    password = config.SEED_PASS or secrets.token_urlsafe(12)
+    auth.create_user(config.SEED_USER, password, role="admin")
+    if config.SEED_PASS:
+        print(f"created admin user '{config.SEED_USER}' with the password from HIDS_ADMIN_PASS", file=sys.stderr)
+    else:
+        print(f"created admin user '{config.SEED_USER}' with password {password} "
+              "(shown once, set HIDS_ADMIN_PASS to choose your own)", file=sys.stderr)
+
+
+def _limit(default):
+    value = request.args.get("limit", default, type=int)
+    return max(1, min(value, config.MAX_LIMIT))
 
 
 def create_app(start_ingest=True):
     app = Flask(__name__)
-    app.secret_key = config.SECRET_KEY
+    app.secret_key = config.load_secret_key()
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=config.SESSION_HOURS),
+    )
 
     db.init_db()
-
+    _seed_admin()
 
     @app.route("/api/login", methods=["POST"])
     def login():
         data = request.get_json(silent=True) or {}
-        username = data.get("username")
-        password = data.get("password")
-
-        user = auth.check_login(username, password)
+        user = auth.check_login(data.get("username"), data.get("password"))
         if user is None:
             return {"error": "invalid username or password"}, 401
-
         auth.do_login(user)
         return {"user": user["username"]}
 
@@ -55,7 +73,6 @@ def create_app(start_ingest=True):
         user = auth.current_user()
         return {"user": user["username"], "role": user["role"], "kind": user["kind"]}
 
-
     @app.route("/api/health")
     def health():
         return {
@@ -65,22 +82,19 @@ def create_app(start_ingest=True):
             "ml_has_autoencoder": False,
             "ml_alerting": False,
             "ml_mode": "disabled",
-            "counts": db.counts()
+            "counts": db.counts(),
         }
-
 
     @app.route("/api/events")
     @auth.login_required
     def events():
-        limit = min(int(request.args.get("limit", 100)), 1000)
         pid = request.args.get("pid", type=int)
-        return {"events": db.recent_events(limit=limit, pid=pid)}
+        return {"events": db.recent_events(limit=_limit(100), pid=pid)}
 
     @app.route("/api/processes")
     @auth.login_required
     def processes():
-        limit = min(int(request.args.get("limit", 100)), 1000)
-        return {"processes": db.all_processes(limit=limit)}
+        return {"processes": db.all_processes(limit=_limit(100))}
 
     @app.route("/api/alerts")
     @auth.login_required
@@ -96,9 +110,8 @@ def create_app(start_ingest=True):
             "ml_alerting": False,
             "latest": scores[0] if scores else None,
             "scores": scores,
-            "anomaly_count": sum(1 for s in scores if s.get("is_anomaly"))
+            "anomaly_count": sum(1 for s in scores if s["is_anomaly"]),
         }
-
 
     @app.route("/api/sim/<name>", methods=["POST"])
     @auth.require_role("analyst")
@@ -106,15 +119,12 @@ def create_app(start_ingest=True):
         command = config.SIM_WHITELIST.get(name)
         if command is None:
             return {"error": "unknown simulation"}, 400
-
         thread = threading.Thread(target=_run_simulation, args=(command,), daemon=True)
         thread.start()
-
         return {
             "started": name,
-            "note": "running in the background, stops after " + str(config.SIM_TIMEOUT_SECONDS) + " seconds at most"
+            "note": f"running in the background, stops after {config.SIM_TIMEOUT_SECONDS} seconds at most",
         }, 202
-
 
     @app.route("/api/rules")
     @auth.login_required
@@ -128,7 +138,6 @@ def create_app(start_ingest=True):
         if rule is None:
             return {"error": "unknown rule"}, 404
         return {"id": rule["id"], "enabled": rule["enabled"]}
-
 
     @app.route("/api/incidents")
     @auth.login_required
@@ -148,15 +157,12 @@ def create_app(start_ingest=True):
     def incident_status(incident_id):
         data = request.get_json(silent=True) or {}
         new_status = data.get("status")
-
         if new_status not in config.INCIDENT_STATUSES:
             return {"error": "status must be one of: " + ", ".join(config.INCIDENT_STATUSES)}, 400
-
         who = auth.current_user()["username"]
         if not db.set_incident_status(incident_id, new_status, who):
             return {"error": "unknown incident"}, 404
         return db.get_incident(incident_id)
-
 
     @app.route("/api/evaluation")
     @auth.login_required
@@ -165,7 +171,6 @@ def create_app(start_ingest=True):
         numbers["ml_ready"] = False
         numbers["ml_alerting"] = False
         return numbers
-
 
     @app.route("/api/apikeys")
     @auth.require_role("admin")
@@ -178,19 +183,17 @@ def create_app(start_ingest=True):
         data = request.get_json(silent=True) or {}
         name = data.get("name")
         role = data.get("role", "viewer")
-
         if not isinstance(name, str) or not name.strip() or len(name) > 64:
             return {"error": "name is required (1 to 64 characters)"}, 400
         if role not in auth.ROLES:
             return {"error": "role must be one of: " + ", ".join(auth.ROLES)}, 400
-
         token, key_id = auth.create_api_key(name.strip(), role)
         return {
             "id": key_id,
             "name": name.strip(),
             "role": role,
             "key": token,
-            "note": "Copy this key now. It is shown only once and cannot be shown again."
+            "note": "Copy this key now. It is shown only once and cannot be shown again.",
         }, 201
 
     @app.route("/api/apikeys/<int:key_id>", methods=["DELETE"])
@@ -207,5 +210,4 @@ def create_app(start_ingest=True):
 
 
 if __name__ == "__main__":
-    app = create_app(start_ingest=True)
-    app.run(debug=True, port=config.PORT)
+    create_app(start_ingest=True).run(host=config.HOST, port=config.PORT, debug=False)
