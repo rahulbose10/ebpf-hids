@@ -49,3 +49,6 @@ PTRACE_CHECK comes from the lsm/ptrace_access_check hook, not the ptrace syscall
 The prevention program (ips_enforce, optional) emits its own stream, not the sensor stream:
 
     {"ts":..,"pid":..,"comm":"strace","action":"BLOCK","detail":"BLOCKED ptrace target_pid=1234"}
+    {"ts":..,"pid":..,"comm":"bash","action":"BLOCK","detail":"BLOCKED exec path=/tmp/hids_blocked"}
+
+Run it as sudo ./loader/ips_enforce <pid-to-protect> [path-to-block-exec]. Without a path nothing is exec-blocked. The path is resolved once at start to its device and inode, so a relative path, a symlink or a hard link to that file are blocked too. A copy is a new inode and still runs, and replacing the file drops the block. The exec detail is the path as typed by the caller, cut at 127 characters.
