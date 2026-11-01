@@ -11,7 +11,7 @@ Status lines ("sensor up", "dropped events") go to stderr, never stdout.
 
 | type | detail | notes |
 |---|---|---|
-| EXEC | /usr/bin/ls | the program being started; comm is still the parent's name at this point |
+| EXEC | /usr/bin/ls | a program that started successfully (execve or execveat returned 0); failed attempts, such as a PATH search, are not reported; comm is still the parent's name and ts is when the exec was asked for |
 | OPEN | /tmp/x | write intent only (O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND) |
 | CONNECT | 5.6.7.8:4444 or [2001:db8:0:0:0:0:0:1]:4444 | IPv4-mapped IPv6 is reported as plain IPv4; port 0 is never emitted |
 | BIND | 0.0.0.0:4444 or [0:0:0:0:0:0:0:0]:4445 | same formats as CONNECT |
