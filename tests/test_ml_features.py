@@ -137,4 +137,5 @@ def test_score_row_has_the_api_contract_keys():
     engine = Engine(anomaly_model=FakeModel(alerting=False, flag=False))
     engine.process_event(ev(1.0, "OPEN", "/tmp/x"))
     row = engine.recent_anomaly_scores()[0]
-    assert set(row) == {"pid", "comm", "ts", "iforest_score", "recon_error", "is_anomaly"}
+    assert set(row) == {"pid", "comm", "ts", "iforest_score", "recon_error", "is_anomaly",
+                        "ae_anomaly", "limit_anomaly", "over_limit"}

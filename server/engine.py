@@ -182,6 +182,9 @@ class Engine:
             "iforest_score": result.get("iforest_score"),
             "recon_error": result.get("recon_error"),
             "is_anomaly": bool(result.get("is_anomaly")),
+            "ae_anomaly": bool(result.get("ae_anomaly")),
+            "limit_anomaly": bool(result.get("limit_anomaly")),
+            "over_limit": list(result.get("over_limit") or []),
         }
         self.anomaly_scores.append(row)
         if not row["is_anomaly"] or not getattr(self.anomaly_model, "alerting", True):
