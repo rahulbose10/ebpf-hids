@@ -11,14 +11,15 @@ Status lines ("sensor up", "dropped events") go to stderr, never stdout.
 
 | type | detail | notes |
 |---|---|---|
-| EXEC | /usr/bin/ls | the program being started; comm is still the parent's name at this point |
+| EXEC | /usr/bin/ls | a program that started successfully (execve or execveat returned 0); failed attempts, such as a PATH search, are not reported; comm is still the parent's name and ts is when the exec was asked for |
 | OPEN | /tmp/x | write intent only (O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND) |
+| READ | /etc/shadow | read-only open of a path on the loader list (/etc/shadow, /etc/gshadow, /etc/sudoers, SSH private keys under /root/.ssh and /home/*/.ssh, not .pub); exact match on the path as passed, so a relative open is missed, and a key file created after the loader started is not watched |
 | CONNECT | 5.6.7.8:4444 or [2001:db8:0:0:0:0:0:1]:4444 | IPv4-mapped IPv6 is reported as plain IPv4; port 0 is never emitted |
 | BIND | 0.0.0.0:4444 or [0:0:0:0:0:0:0:0]:4445 | same formats as CONNECT |
 | PTRACE | target_pid=1234 | attach and seize only, refused attempts included |
 | SETUID | old_uid=1000 new_uid=0 | setuid, setreuid, setresuid; threaded programs give one event per thread |
 | UNLINK | /tmp/x | |
-| RENAME | /tmp/old -> /tmp/new | each side cut at 59 chars |
+| RENAME | /tmp/old -> /tmp/new | both paths in full, up to 511 characters each, so this detail can be up to 1026 characters while every other type stays under 128 |
 | MPROTECT | addr=0x7f12345000 prot=rwx suppressed=41 | exec remaps only, 1 per pid per second; suppressed = remaps dropped since that pid's previous event |
 | MODULE | dummy.ko or memory_image len=12345 | memory_image means init_module from a buffer, no file |
 | CHMOD | /tmp/x mode=4755 | mode is always 4 octal digits |
@@ -29,7 +30,7 @@ Status lines ("sensor up", "dropped events") go to stderr, never stdout.
 CONNECT and BIND: rsplit(":", 1), then strip [ and ] from the address.
 RENAME: split(" -> ", 1).
 MPROTECT: key=value pairs.
-Paths from unlinkat, renameat and fchmodat can be relative to an open directory, and fchmod gives a basename only. Never assume a path is complete or absolute.
+OPEN, UNLINK, RENAME and CHMOD paths are made absolute in the kernel from the directory fd or the cwd, crossing mount points. They are not normalized, so . and .. stay as written, and a path deeper than 32 directories or longer than 511 characters loses its top part. EXEC and READ detail is still the path as the program passed it.
 comm is at most 15 chars and can be a thread name, e.g. "DNS Res~er #12".
 detail can be empty when the kernel could not read the string from the process.
 
@@ -48,3 +49,6 @@ PTRACE_CHECK comes from the lsm/ptrace_access_check hook, not the ptrace syscall
 The prevention program (ips_enforce, optional) emits its own stream, not the sensor stream:
 
     {"ts":..,"pid":..,"comm":"strace","action":"BLOCK","detail":"BLOCKED ptrace target_pid=1234"}
+    {"ts":..,"pid":..,"comm":"bash","action":"BLOCK","detail":"BLOCKED exec path=/tmp/hids_blocked"}
+
+Run it as sudo ./loader/ips_enforce <pid-to-protect> [path-to-block-exec]. Without a path nothing is exec-blocked. The path is resolved once at start to its device and inode, so a relative path, a symlink or a hard link to that file are blocked too. A copy is a new inode and still runs, and replacing the file drops the block. The exec detail is the path as typed by the caller, cut at 127 characters.

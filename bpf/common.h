@@ -7,6 +7,7 @@
 
 #define COMM_LEN 16
 #define DETAIL_LEN 128
+#define LONG_DETAIL_LEN 1040
 
 enum event_type {
 	EVT_EXEC = 1,
@@ -22,6 +23,7 @@ enum event_type {
 	EVT_CHMOD,
 	EVT_CORRELATED,
 	EVT_PTRACE_CHECK,
+	EVT_READ,
 };
 
 struct event {
@@ -34,7 +36,18 @@ struct event {
 	char detail[DETAIL_LEN];
 };
 
+struct event_long {
+	__u64 kts;
+	__u32 pid;
+	__u32 ppid;
+	__u32 uid;
+	__u32 type;
+	char comm[COMM_LEN];
+	char detail[LONG_DETAIL_LEN];
+};
+
 _Static_assert(sizeof(struct event) == 168, "struct event size changed");
+_Static_assert(sizeof(struct event_long) == 1080, "struct event_long size changed");
 
 #ifdef __VMLINUX_H__
 struct {

@@ -20,7 +20,7 @@ all: $(BPF_OBJS) loader/loader
 bpf/vmlinux.h:
 	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@.tmp && mv $@.tmp $@
 
-bpf/%.bpf.o: bpf/%.bpf.c bpf/common.h bpf/vmlinux.h
+bpf/%.bpf.o: bpf/%.bpf.c bpf/common.h bpf/path.h bpf/vmlinux.h
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 
 loader/loader: loader/loader.c bpf/common.h

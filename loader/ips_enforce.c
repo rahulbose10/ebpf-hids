@@ -4,13 +4,24 @@
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include "../bpf/common.h"
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+#define KERNEL_DEV(d) ((major(d) << 20) | minor(d))
+
 struct config {
 	__u32 protected_pid;
-	__u32 pad;
+	__u32 blocked_dev;
+	__u64 blocked_ino;
+};
+
+static const char *const prog_names[] = {
+	"enforce_ptrace",
+	"enforce_exec",
 };
 
 static volatile sig_atomic_t stop = 0;
@@ -35,19 +46,21 @@ static int handle_event(void *ctx, void *data, size_t size)
 
 int main(int argc, char **argv)
 {
+	struct bpf_link *links[ARRAY_SIZE(prog_names)] = { NULL };
 	struct bpf_object *obj = NULL;
-	struct bpf_link *link = NULL;
 	struct ring_buffer *rb = NULL;
 	struct bpf_program *prog;
 	struct bpf_map *cfg_map, *ev_map;
 	struct config cfg = {};
+	struct stat st;
 	__u32 key = 0;
+	size_t i;
 	long pid;
 	long err;
 	int ret = 1;
 
-	if (argc != 2) {
-		fprintf(stderr, "usage: %s <pid-to-protect>\n", argv[0]);
+	if (argc != 2 && argc != 3) {
+		fprintf(stderr, "usage: %s <pid-to-protect> [path-to-block-exec]\n", argv[0]);
 		return 1;
 	}
 	pid = strtol(argv[1], NULL, 10);
@@ -56,6 +69,19 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	cfg.protected_pid = (__u32)pid;
+
+	if (argc == 3) {
+		if (stat(argv[2], &st) != 0) {
+			fprintf(stderr, "cannot stat %s: %s\n", argv[2], strerror(errno));
+			return 1;
+		}
+		if (!S_ISREG(st.st_mode)) {
+			fprintf(stderr, "not a regular file: %s\n", argv[2]);
+			return 1;
+		}
+		cfg.blocked_dev = KERNEL_DEV(st.st_dev);
+		cfg.blocked_ino = st.st_ino;
+	}
 
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
@@ -75,9 +101,8 @@ int main(int argc, char **argv)
 
 	cfg_map = bpf_object__find_map_by_name(obj, "enforce_cfg");
 	ev_map = bpf_object__find_map_by_name(obj, "events");
-	prog = bpf_object__find_program_by_name(obj, "enforce_ptrace");
-	if (!cfg_map || !ev_map || !prog) {
-		fprintf(stderr, "object is missing a map or program\n");
+	if (!cfg_map || !ev_map) {
+		fprintf(stderr, "object is missing a map\n");
 		goto out;
 	}
 
@@ -95,18 +120,31 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	link = bpf_program__attach(prog);
-	err = libbpf_get_error(link);
-	if (err) {
-		fprintf(stderr, "attach failed: %s\n", strerror(-err));
-		link = NULL;
-		goto out;
+	for (i = 0; i < ARRAY_SIZE(prog_names); i++) {
+		prog = bpf_object__find_program_by_name(obj, prog_names[i]);
+		if (!prog) {
+			fprintf(stderr, "object is missing %s\n", prog_names[i]);
+			goto out;
+		}
+		links[i] = bpf_program__attach(prog);
+		err = libbpf_get_error(links[i]);
+		if (err) {
+			fprintf(stderr, "attach %s failed: %s\n", prog_names[i], strerror(-err));
+			links[i] = NULL;
+			goto out;
+		}
 	}
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
 
 	fprintf(stderr, "IPS ACTIVE: ptrace against pid %ld will be denied. Ctrl+C to disable.\n", pid);
+	if (cfg.blocked_ino)
+		fprintf(stderr, "IPS ACTIVE: exec of %s (dev %u, inode %llu) will be denied.\n",
+			argv[2], cfg.blocked_dev, (unsigned long long)cfg.blocked_ino);
+	else
+		fprintf(stderr, "IPS: no exec path given, exec blocking off.\n");
+
 	while (!stop) {
 		ring_buffer__consume(rb);
 		int n = ring_buffer__poll(rb, 100);
@@ -120,7 +158,8 @@ int main(int argc, char **argv)
 
 out:
 	ring_buffer__free(rb);
-	bpf_link__destroy(link);
+	for (i = 0; i < ARRAY_SIZE(links); i++)
+		bpf_link__destroy(links[i]);
 	bpf_object__close(obj);
 	fprintf(stderr, "IPS disabled.\n");
 	return ret;
