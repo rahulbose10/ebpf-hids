@@ -2,7 +2,7 @@ import { useState } from "react";
 import GaugeBar from "../components/GaugeBar";
 import SeverityChip from "../components/SeverityChip";
 import { api, usePoll } from "../api";
-import { formatKts } from "../format";
+import { formatEvent, formatKts } from "../format";
 
 function gaugeNote(health) {
   if (!health) return "Waiting for /api/health.";
@@ -17,6 +17,24 @@ function gaugeNote(health) {
   return health.ml_has_autoencoder === false
     ? `${base} No autoencoder is loaded.`
     : base;
+}
+
+function aeRatio(latest, threshold) {
+  if (typeof latest?.recon_error !== "number" || typeof threshold !== "number" || threshold <= 0) {
+    return null;
+  }
+  return latest.recon_error / threshold;
+}
+
+function flaggedBy(latest) {
+  if (!latest?.is_anomaly) return "-";
+  const parts = [];
+  if (latest.ae_anomaly) parts.push("autoencoder");
+  if (latest.limit_anomaly) {
+    const names = Array.isArray(latest.over_limit) ? latest.over_limit.join(", ") : "";
+    parts.push(names ? `limits (${names})` : "limits");
+  }
+  return parts.length ? parts.join(", ") : "model";
 }
 
 function Field({ label, children }) {
@@ -36,6 +54,8 @@ function Detection() {
   const { data: health } = usePoll(api.health, 4000);
 
   const alerts = data?.alerts || [];
+  const latest = anomaly?.latest ?? null;
+  const ratio = aeRatio(latest, anomaly?.ae_threshold);
   const [selected, setSelected] = useState(null);
 
   const picked = selected !== null ? alerts[selected] : null;
@@ -49,37 +69,54 @@ function Detection() {
       <div className="page-header">
         <h1>Detection</h1>
         <p>
-          Rule detections mapped to MITRE ATT&CK techniques, plus the Isolation
-          Forest anomaly gauge.
+          Rule detections mapped to MITRE ATT&CK techniques, plus the ML anomaly
+          gauge.
         </p>
       </div>
 
       <section className="panel overflow-hidden">
         <header className="flex h-10 items-center border-b border-line px-4">
-          <span className="eyebrow">Anomaly gauge · Isolation Forest</span>
+          <span className="eyebrow">Anomaly gauge · autoencoder error / threshold</span>
         </header>
 
         <div className="p-4">
           <p className="mb-3 text-[12.5px] text-mute">{gaugeNote(health)}</p>
 
           <GaugeBar
-            score={anomaly?.score ?? 0}
-            threshold={anomaly?.threshold ?? 0.85}
+            fill={ratio === null ? 0 : ratio / 2}
+            mark={ratio === null ? null : 0.5}
+            alarm={Boolean(latest?.is_anomaly)}
           />
+          <div className="mt-1 flex justify-between font-mono text-[10px] text-mute">
+            <span>0</span>
+            <span>{ratio === null ? "no autoencoder score" : "threshold"}</span>
+            <span>2x</span>
+          </div>
 
           <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1 font-mono text-[11.5px] text-mute">
             <span>
-              model <strong className="ml-1 text-text">{anomaly?.model ?? "-"}</strong>
+              mode <strong className="ml-1 text-text">{health?.ml_mode ?? "-"}</strong>
             </span>
             <span>
-              score <strong className="ml-1 text-text">{anomaly?.score ?? "-"}</strong>
+              error / threshold{" "}
+              <strong className="ml-1 text-text">{ratio === null ? "-" : `${ratio.toFixed(2)}x`}</strong>
             </span>
             <span>
-              threshold{" "}
-              <strong className="ml-1 text-text">{anomaly?.threshold ?? "-"}</strong>
+              process{" "}
+              <strong className="ml-1 text-text">{latest ? `${latest.comm} ${latest.pid}` : "-"}</strong>
             </span>
             <span>
-              status <strong className="ml-1 text-text">{anomaly?.status ?? "-"}</strong>
+              verdict{" "}
+              <strong className="ml-1 text-text">
+                {latest ? (latest.is_anomaly ? "anomaly" : "normal") : "-"}
+              </strong>
+            </span>
+            <span>
+              flagged by <strong className="ml-1 text-text">{flaggedBy(latest)}</strong>
+            </span>
+            <span>
+              flagged in last {anomaly?.scores?.length ?? 0}{" "}
+              <strong className="ml-1 text-text">{anomaly?.anomaly_count ?? "-"}</strong>
             </span>
           </div>
         </div>
@@ -164,7 +201,7 @@ function Detection() {
                   {info.technique ? ` · ${info.technique}` : ""}
                 </Field>
                 {info.tactic && <Field label="Tactic">{info.tactic}</Field>}
-                {info.event && <Field label="Trigger event">{info.event}</Field>}
+                {info.event && <Field label="Trigger event">{formatEvent(info.event)}</Field>}
                 <Field label="Confidence">{picked.confidence ?? "-"}</Field>
                 <Field label="Kernel ts">
                   <span className="font-mono">{formatKts(picked.ts)}</span>

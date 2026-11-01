@@ -11,6 +11,9 @@ async function req(path, opts = {}) {
   });
 
   if (res.status === 401) {
+    if (path !== "/login") {
+      window.dispatchEvent(new Event("hids:unauth"));
+    }
     throw { unauth: true };
   }
 
@@ -68,17 +71,12 @@ export const api = {
   navigatorDownload: () => req("/navigator/download"),
 };
 
-export function usePoll(fn, intervalMs = 3000, deps = []) {
+export function usePoll(fn, intervalMs = 3000) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
   const saved = useRef(fn);
 
-  // Keep the newest fetch function in the ref, but do it in an effect, not
-  // during render. React may render a component without committing it, and a
-  // ref written during render can then hold a function from a render that was
-  // thrown away. This effect is declared before the polling effect below, so on
-  // each commit it runs first and the polling effect always reads the latest fn.
   useEffect(() => {
     saved.current = fn;
   });
@@ -113,10 +111,7 @@ export function usePoll(fn, intervalMs = 3000, deps = []) {
       alive = false;
       clearInterval(id);
     };
-    // deps comes from the caller and decides when polling restarts. The
-    // interval is fixed per call site, so it is not listed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [intervalMs]);
 
   const refresh = useCallback(() => tickRef.current(), []);
 

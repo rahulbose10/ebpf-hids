@@ -1,23 +1,18 @@
-// A row of blocks that fills left to right with the anomaly score (0 to 1).
-// Blocks past the alert threshold turn red, so the threshold is visible
-// without reading a number.
-function GaugeBar({ score = 0, threshold = 0.85 }) {
+function GaugeBar({ fill = 0, mark = null, alarm = false }) {
   const totalBlocks = 64;
-  const clamped = Math.min(Math.max(Number(score) || 0, 0), 1);
+  const clamped = Math.min(Math.max(Number(fill) || 0, 0), 1);
   const activeBlocks = Math.round(clamped * totalBlocks);
+  const markBlock = mark === null ? -1 : Math.min(Math.round(mark * totalBlocks), totalBlocks - 1);
 
   return (
-    <div className="gauge-bar" role="img" aria-label={`anomaly score ${clamped}`}>
+    <div className="gauge-bar" role="img" aria-label={`anomaly gauge ${clamped.toFixed(2)}${alarm ? ", flagged" : ""}`}>
       {Array.from({ length: totalBlocks }, (_, i) => {
-        const filled = i < activeBlocks;
-        const overThreshold = (i + 1) / totalBlocks > threshold;
-
         let state = "inactive";
-        if (filled) {
-          state = overThreshold ? "hot" : "active";
+        if (i < activeBlocks) {
+          state = alarm ? "hot" : "active";
         }
-
-        return <span key={i} className={`gauge-block ${state}`} />;
+        const edge = i === markBlock ? " outline outline-1 outline-critical/70" : "";
+        return <span key={i} className={`gauge-block ${state}${edge}`} />;
       })}
     </div>
   );

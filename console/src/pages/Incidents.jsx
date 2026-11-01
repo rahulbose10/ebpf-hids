@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
-import { incidentsMock } from "../mock";
-import { api } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { api, usePoll } from "../api";
 import SeverityChip from "../components/SeverityChip";
-import { formatKts } from "../format";
+import { formatEvent, formatKts } from "../format";
 
 const severityStyles = {
   critical: {
@@ -42,22 +41,35 @@ const statusStyles = {
 };
 
 function Incidents() {
-  const incidents = incidentsMock.incidents;
-
   const [selectedId, setSelectedId] = useState(null);
+
+  const listPoll = usePoll(api.incidents, 4000);
+  const detailPoll = usePoll(
+    () => (selectedId === null ? Promise.resolve(null) : api.incident(selectedId)),
+    4000
+  );
+  const refreshList = listPoll.refresh;
+  const refreshDetail = detailPoll.refresh;
+
+  useEffect(() => {
+    refreshDetail();
+  }, [selectedId, refreshDetail]);
+
+  const incidents = useMemo(
+    () => listPoll.data?.incidents ?? [],
+    [listPoll.data]
+  );
 
   const [statusMessage, setStatusMessage] = useState("");
   const [statusError, setStatusError] = useState("");
   const [statusUpdating, setStatusUpdating] =
     useState(false);
 
-  const selectedIncident = useMemo(
-    () =>
-      incidents.find(
-        (incident) => incident.id === selectedId
-      ),
-    [incidents, selectedId]
-  );
+  const selectedIncident = useMemo(() => {
+    const detail = detailPoll.data;
+    if (detail && detail.id === selectedId) return detail;
+    return incidents.find((incident) => incident.id === selectedId);
+  }, [detailPoll.data, incidents, selectedId]);
 
   const selectIncident = (id) => {
     if (selectedId === id) {
@@ -89,6 +101,8 @@ function Incidents() {
       setStatusMessage(
         `Status updated to ${status}`
       );
+      refreshList();
+      refreshDetail();
     } catch (error) {
       if (error?.unauth) {
         setStatusError(
@@ -126,7 +140,9 @@ function Incidents() {
           <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-mute">
             <span className="h-2 w-2 rounded-full bg-signal" />
 
-            {incidents.length} cases · demo data
+            {listPoll.error && !listPoll.data
+              ? "incidents unavailable"
+              : `${incidents.length} cases`}
           </div>
         </div>
       </section>
@@ -150,6 +166,11 @@ function Incidents() {
           </div>
 
           <div>
+            {incidents.length === 0 && (
+              <div className="px-4 py-6 text-center text-xs text-mute">
+                No incidents yet. A case opens when the first alert fires.
+              </div>
+            )}
             {incidents.map((incident) => {
               const severity =
                 severityStyles[incident.severity] ||
@@ -414,7 +435,7 @@ function Incidents() {
                 </div>
 
                 <div className="space-y-3">
-                  {selectedIncident.alerts.map(
+                  {(selectedIncident.alerts ?? []).map(
                     (alert, index) => {
                       const severity =
                         severityStyles[
@@ -506,7 +527,7 @@ function Incidents() {
                                 </span>
 
                                 <strong className="mt-1 block font-mono text-[10px]">
-                                  {alert.detail.event}
+                                  {formatEvent(alert.detail?.event)}
                                 </strong>
                               </div>
 
@@ -516,7 +537,7 @@ function Incidents() {
                                 </span>
 
                                 <strong className="mt-1 block text-[10px]">
-                                  {alert.detail.tactic}
+                                  {alert.detail?.tactic ?? "-"}
                                 </strong>
                               </div>
 
@@ -526,7 +547,7 @@ function Incidents() {
                                 </span>
 
                                 <strong className="mt-1 block text-[10px]">
-                                  {alert.detail.technique}
+                                  {alert.detail?.technique ?? alert.technique}
                                 </strong>
                               </div>
                             </div>

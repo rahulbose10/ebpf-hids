@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { api } from "./api";
 
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
@@ -38,11 +40,36 @@ const NAV = [
 ];
 
 function App() {
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [session, setSession] = useState("checking");
   const [active, setActive] = useState("overview");
 
-  if (!loggedIn) {
-    return <Login onLogin={() => setLoggedIn(true)} />;
+  useEffect(() => {
+    let alive = true;
+    api
+      .me()
+      .then(() => alive && setSession("in"))
+      .catch(() => alive && setSession("out"));
+    const onUnauth = () => setSession("out");
+    window.addEventListener("hids:unauth", onUnauth);
+    return () => {
+      alive = false;
+      window.removeEventListener("hids:unauth", onUnauth);
+    };
+  }, []);
+
+  const logout = () => {
+    api
+      .logout()
+      .catch(() => null)
+      .finally(() => setSession("out"));
+  };
+
+  if (session === "checking") {
+    return null;
+  }
+
+  if (session !== "in") {
+    return <Login onLogin={() => setSession("in")} />;
   }
 
   const activeItem = NAV.find((item) => item.id === active);
@@ -54,7 +81,7 @@ function App() {
         nav={NAV}
         active={active}
         setActive={setActive}
-        onLogout={() => setLoggedIn(false)}
+        onLogout={logout}
       />
 
       <div className="main-content">

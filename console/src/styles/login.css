@@ -171,3 +171,14 @@
     color:#4fd1c5;
     font-size:16px;
 }
+.login-error{
+    color:#ff5d5d;
+    font-size:14px;
+    margin:-6px 0 14px;
+    text-align:center;
+}
+
+.login-card button:disabled{
+    opacity:.55;
+    cursor:not-allowed;
+}

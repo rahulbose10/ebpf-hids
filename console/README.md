@@ -30,7 +30,7 @@ Use `npm ci`, not `npm install`. It installs exactly what package-lock.json says
 
 ## Login
 
-The login page accepts any input. It does not call /api/login yet. Do not treat it as a security control.
+The login page posts to /api/login and the server sets a session cookie. On load the console asks /api/me whether that cookie is still good. Any 401 from the API sends you back to the login page. Sign out calls /api/logout. The console only shows the login form; the server is what refuses requests.
 
 ## What each view reads
 
@@ -43,9 +43,9 @@ The login page accepts any input. It does not call /api/login yet. Do not treat 
 | Analytics | /api/health, /api/alerts | live, counts the latest 300 alerts only |
 | Evaluation | /api/health, /api/alerts, /api/anomaly | live |
 | Rules | /api/rules | live; if it fails, shows a copy of server/rules/*.yml with unknown state |
-| ATT&CK Map | /api/mitre | shape not in the contract, see below |
+| ATT&CK Map | /api/mitre | live |
 | Attack Range | POST /api/sim/&lt;id&gt; | ids not checked against the server whitelist |
-| Incidents | mock.js | demo data, not the API |
+| Incidents | /api/incidents, /api/incidents/&lt;id&gt; | live |
 | Threat Intel | mock.js | browser only, nothing is sent |
 | Enforcement | none | browser only, audit log empty |
 | Settings | none | browser only |
@@ -60,15 +60,17 @@ The Rules cards take their on and where lines from a copy of the rule files insi
 
 The three-state ML light reads ml_alerting, not ml_ready. Loaded but not allowed to alert shows as "gauge only".
 
+The Detection gauge is the latest autoencoder reconstruction error divided by ae_threshold from /api/anomaly. The bar runs from 0 to twice the threshold, the outlined block is the threshold, and the filled part turns red when that score row is flagged, whichever check flagged it. A model without an autoencoder leaves the bar empty and says so.
+
 ## What is not done
 
-- Incidents lists mock incidents, but its status buttons call the real POST /api/incidents/&lt;id&gt;/status. Against a real backend the ids will not match.
 - Threat Intel, Enforcement and Settings need /api/iocs, /api/enforcement, /api/users, /api/apikeys and /api/alerting, which are not wired.
-- /api/mitre has no agreed response shape. The ATT&CK Map page accepts several guesses.
+- AttackMap.jsx still accepts several guessed shapes for /api/mitre. The real one is {techniques:[...]}, so the other branches can go.
+- Download layer JSON calls /api/navigator/download, which L4 has not built yet.
 - Attack Range sends ids like reverse-shell. The server accepts only names on its own whitelist, and the simulation scripts are not written.
-- Login does not check anything, and a 401 from the API is not handled.
+- Rules.jsx uses plain fetch, not api.jsx, so a 401 there shows the YAML copy instead of sending you to the login page. Another poll catches it within a few seconds.
 - There are no tests.
-- Never run against the real L4 backend or the live sensor. Everything was checked against a small stub backend and made-up test responses in the contract shape.
+- Checked against the real L4 backend replaying samples/events.jsonl, not yet against the live sensor.
 - npm audit reports 6 findings, all in build and dev tools. `npm audit --omit=dev` reports none.
 
 ## Layout
@@ -80,7 +82,7 @@ src/format.js        formatKts, kernel time formatting
 src/components/      Sidebar, Topbar, StatCard, SeverityChip, GaugeBar, Panel
 src/pages/           one file per view
 src/styles/          css for the shell, cards, sidebar, top bar, login
-src/mock.js          demo data for Incidents and Threat Intel
+src/mock.js          demo data for Threat Intel
 ```
 
 usePoll(fn, ms) calls fn at once, then every ms milliseconds, and returns `{data, error, refresh}`. Polling is used instead of websockets because the data is a few JSON documents every few seconds.
