@@ -8,6 +8,7 @@ PROTECTED = [
     "/api/incidents",
     "/api/evaluation",
     "/api/apikeys",
+    "/api/mitre",
 ]
 def login(client, username="tester", password="testpass"):
     return client.post("/api/login", json={"username": username, "password": password})

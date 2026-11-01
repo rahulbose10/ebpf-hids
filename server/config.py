@@ -7,6 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("HIDS_DATA_DIR", BASE_DIR / "data"))
 MODEL_DIR = Path(os.environ.get("HIDS_MODEL_DIR", BASE_DIR / "server" / "ml"))
 RULES_DIR = BASE_DIR / "server" / "rules"
+CONSOLE_DIST = BASE_DIR / "console" / "dist"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -22,12 +23,17 @@ SEED_PASS = os.environ.get("HIDS_ADMIN_PASS")
 
 MAX_LIMIT = 1000
 
+REORDER_HOLD_SECONDS = 0.15
+REORDER_MAX_EVENTS = 5000
+INGEST_QUEUE_MAX = 10000
+EVENT_BATCH_SIZE = 200
+EVENT_FLUSH_SECONDS = 0.5
+SENSOR_STALE_SECONDS = 60
+
 SIM_WHITELIST = {
     "demo": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_demo.py")],
 }
 SIM_TIMEOUT_SECONDS = 30
-
-INCIDENT_STATUSES = ("open", "investigating", "resolved", "false_positive")
 
 RESPONSE_ENABLED = False
 RESPONSE_DRY_RUN = True

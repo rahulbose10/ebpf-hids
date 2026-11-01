@@ -78,7 +78,8 @@ def init_db():
             old_status TEXT,
             new_status TEXT,
             changed_by TEXT,
-            ts REAL NOT NULL
+            ts REAL NOT NULL,
+            note TEXT
         )
     """)
 
@@ -132,8 +133,16 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_technique ON alerts (technique)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_incident ON incident_audit (incident_id)")
 
+    _add_column_if_missing(cur, "incident_audit", "note", "TEXT")
+
     conn.commit()
     conn.close()
+
+
+def _add_column_if_missing(cur, table, column, sql_type):
+    columns = {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
 
 
 def insert_user(username, password_hash, salt, role):
@@ -186,15 +195,29 @@ def insert_event(ts, pid, ppid, uid, comm, type_, detail):
     conn.close()
 
 
+def insert_events(events):
+    if not events:
+        return
+    conn = get_connection()
+    conn.executemany(
+        "INSERT INTO events (ts, pid, ppid, uid, comm, type, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [(e["ts"], e["pid"], e["ppid"], e["uid"], e["comm"], e["type"], e["detail"]) for e in events]
+    )
+    conn.commit()
+    conn.close()
+
+
 def insert_alert(ts, rule, technique, severity, confidence, pid, comm, summary, detail, incident_id=None):
     conn = get_connection()
-    conn.execute(
+    cur = conn.execute(
         """INSERT INTO alerts (ts, rule, technique, severity, confidence, pid, comm, summary, detail, incident_id)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (ts, rule, technique, severity, confidence, pid, comm, summary, json.dumps(detail), incident_id)
     )
+    alert_id = cur.lastrowid
     conn.commit()
     conn.close()
+    return alert_id
 
 
 def recent_events(limit=100, pid=None):
@@ -230,23 +253,6 @@ def recent_alerts(limit=300):
     return alerts
 
 
-def all_processes(limit=1000):
-    conn = get_connection()
-    rows = conn.execute("""
-        SELECT pid,
-               MIN(ppid) as ppid,
-               MIN(uid) as uid,
-               MIN(comm) as comm,
-               COUNT(*) as exec_count
-        FROM events
-        GROUP BY pid
-        ORDER BY pid DESC
-        LIMIT ?
-    """, (limit,)).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
-
-
 def recent_anomaly_scores(limit=300):
     conn = get_connection()
     rows = conn.execute(
@@ -275,31 +281,28 @@ def counts():
     return result
 
 
-def insert_incident(title, root_pid, root_comm, severity, first_seen, last_seen):
+def upsert_incident(row):
     conn = get_connection()
-    cur = conn.execute(
-        """INSERT INTO incidents
-           (title, root_pid, root_comm, severity, status, first_seen, last_seen, alert_count)
-           VALUES (?, ?, ?, ?, 'open', ?, ?, 0)""",
-        (title, root_pid, root_comm, severity, first_seen, last_seen)
-    )
-    incident_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return incident_id
-
-
-def attach_alert_to_incident(alert_id, incident_id):
-    conn = get_connection()
-    conn.execute("UPDATE alerts SET incident_id = ? WHERE id = ?", (incident_id, alert_id))
     conn.execute(
-        """UPDATE incidents
-           SET alert_count = (SELECT COUNT(*) FROM alerts WHERE incident_id = ?)
-           WHERE id = ?""",
-        (incident_id, incident_id)
+        """INSERT INTO incidents
+           (id, title, root_pid, root_comm, severity, status, first_seen, last_seen, alert_count)
+           VALUES (:id, :title, :root_pid, :root_comm, :severity, :status, :first_seen, :last_seen, :alert_count)
+           ON CONFLICT(id) DO UPDATE SET
+               severity = excluded.severity,
+               first_seen = excluded.first_seen,
+               last_seen = excluded.last_seen,
+               alert_count = excluded.alert_count""",
+        row
     )
     conn.commit()
     conn.close()
+
+
+def max_incident_id():
+    conn = get_connection()
+    value = conn.execute("SELECT MAX(id) FROM incidents").fetchone()[0]
+    conn.close()
+    return value or 0
 
 
 def list_incidents(limit=200):
@@ -337,7 +340,7 @@ def get_incident(incident_id):
     return incident
 
 
-def set_incident_status(incident_id, new_status, changed_by):
+def set_incident_status(incident_id, new_status, changed_by, note=""):
     conn = get_connection()
     row = conn.execute("SELECT status FROM incidents WHERE id = ?", (incident_id,)).fetchone()
     if row is None:
@@ -348,9 +351,9 @@ def set_incident_status(incident_id, new_status, changed_by):
     if old_status != new_status:
         conn.execute("UPDATE incidents SET status = ? WHERE id = ?", (new_status, incident_id))
         conn.execute(
-            """INSERT INTO incident_audit (incident_id, old_status, new_status, changed_by, ts)
-               VALUES (?, ?, ?, ?, ?)""",
-            (incident_id, old_status, new_status, changed_by, time.time())
+            """INSERT INTO incident_audit (incident_id, old_status, new_status, changed_by, ts, note)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (incident_id, old_status, new_status, changed_by, time.time(), note)
         )
         conn.commit()
     conn.close()
@@ -367,6 +370,24 @@ def incident_audit(incident_id):
     return [dict(row) for row in rows]
 
 
+def technique_counts():
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT technique, COUNT(*) AS n FROM alerts
+           WHERE technique IS NOT NULL AND technique != 'ML-ANOM'
+           GROUP BY technique"""
+    ).fetchall()
+    conn.close()
+    return {row["technique"]: row["n"] for row in rows}
+
+
+def list_iocs():
+    conn = get_connection()
+    rows = conn.execute("SELECT id, type, value, description FROM iocs ORDER BY id").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def evaluation_numbers():
     conn = get_connection()
 
@@ -375,13 +396,6 @@ def evaluation_numbers():
     ml_alerts = conn.execute(
         "SELECT COUNT(*) FROM alerts WHERE technique = 'ML-ANOM'"
     ).fetchone()[0]
-
-    technique_rows = conn.execute(
-        """SELECT technique, COUNT(*) AS n FROM alerts
-           WHERE technique IS NOT NULL AND technique != 'ML-ANOM'
-           GROUP BY technique"""
-    ).fetchall()
-    by_technique = {row["technique"]: row["n"] for row in technique_rows}
 
     incident_count = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
     alerts_in_incidents = conn.execute(
@@ -403,7 +417,7 @@ def evaluation_numbers():
         "total_alerts": total_alerts,
         "rule_alerts": total_alerts - ml_alerts,
         "ml_alerts": ml_alerts,
-        "by_technique": by_technique,
+        "by_technique": technique_counts(),
         "incidents": incident_count,
         "alerts_per_incident": alerts_per_incident,
         "anomaly_scores": anomaly_scores,
