@@ -298,6 +298,16 @@
 - Added samples/events.jsonl: 160 events from a 45 s and a 20 s capture, lab commands only, 11 of the 12 event types in docs/sensor-contract.md. CORRELATED is missing because it needs --correlate. 42 of the first 192 lines were Firefox profile paths, dropped, and the username and hostname replaced. Replays through server.ingest with 0 bad lines and 3 alerts, all from the lab commands (bind on 127.0.0.1, modprobe dummy, rwx mprotect).
 - Still open: reads of /etc/shadow still make no event. rm -rf reports relative paths. A failed exec during a PATH search still shows up as an EXEC event. Exec blocking is not done, only ptrace. 7 rules have never fired live.
 
+## 2026-10-28 - L5 console, session 1 (import, restyle, contract fixes, Linux build)
+- Imported Anit Chakraborty's console into console/ on l5-console. Restyled all 14 views to a compact layout with a labeled sidebar. Login page kept as Anit made it.
+- Removed data that was shown as if real: placeholder bars in Analytics, invented seed users and webhook in Settings, and "all active, 0 hits" in the Rules fallback. Pages that only keep browser state now say so on the page.
+- Rules: the on and where lines are now generated from server/rules/*.yml at main 1f3506c. The old page had made-up conditions, ransomware_burst at 15 instead of 25, and T1059 filed under Command and Control.
+- Evaluation read score, threshold, model and status from /api/anomaly. Those names exist only in Anit's stub, not in the contract. It now reads scores[] and is_anomaly.
+- usePoll wrote to a ref during render. Moved into an effect. eslint src is clean.
+- npm ci and vite build pass on the Ubuntu VM with Node 22.23.4 (built in 993 ms). npm audit shows 6 findings, all in dev tooling, 0 with --omit=dev.
+- Only checked in the browser against Anit's stub backend. Never run against the real L4 API or the live sensor.
+- Still open: Incidents still reads mock.js. Threat Intel, Enforcement and Settings keep state in the browser only. The /api/mitre shape is not agreed with L4. Attack Range ids are not checked against L4's sim whitelist, and the simulation scripts are not written. No README or DEMO_SCRIPT yet.
+
 ## 2026-10-31 - L3 anomaly layer, review and integration
 - Took the ML layer as delivered by Manabendra and committed it under his name, his half of features.py added below Subhrajit's ProcessState. It trained and saved, but extract_features read a dict nothing in the engine builds, hour_of_day came from the kernel ts (seconds since boot, so it was hours since boot, not the time of day), the autoencoder threshold was never saved, models landed in whatever folder it ran from, and the attack set was 100 copies of one process.
 - Rewrote the L3 half of server/features.py against ProcessState. gen_baseline now feeds synthetic events through ProcessState and capture_baseline replays sensor lines through the Engine, so training rows come from the same code as live scoring.

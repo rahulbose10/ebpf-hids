@@ -1,0 +1,80 @@
+.dashboard{
+  display:flex;
+  min-height:100vh;
+}
+
+.main-content{
+  flex:1;
+  min-width:0;
+  padding:16px 24px 24px;
+  background:transparent;
+}
+
+.page-header{
+  margin:4px 0 16px;
+}
+
+.page-header h1{
+  margin:0;
+  font-family:"Space Grotesk",sans-serif;
+  font-size:22px;
+  font-weight:600;
+  letter-spacing:-0.01em;
+  color:theme('colors.text');
+}
+
+.page-header p{
+  margin-top:4px;
+  font-size:12.5px;
+  color:theme('colors.mute');
+}
+
+/* Panel component: optional title strip, then the body. */
+.panel-label{
+  display:flex;
+  align-items:center;
+  min-height:40px;
+  padding:0 16px;
+  border-bottom:1px solid theme('colors.line');
+  font-family:"JetBrains Mono",monospace;
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:theme('colors.mute');
+}
+
+.panel-body{
+  padding:14px 16px;
+}
+
+/* Anomaly gauge blocks. Each block takes an equal share of the width,
+   so the bar always fits its panel instead of running off the screen. */
+.gauge-bar{
+  display:flex;
+  gap:2px;
+}
+
+.gauge-block{
+  flex:1 1 0;
+  min-width:2px;
+  height:26px;
+  border-radius:2px;
+}
+
+.gauge-block.active{
+  background:theme('colors.ml');
+}
+
+.gauge-block.hot{
+  background:theme('colors.critical');
+}
+
+.gauge-block.inactive{
+  background:theme('colors.ink-600');
+}
+
+/* Thin dark scrollbars everywhere, instead of the browser's light default. */
+*{
+  scrollbar-width:thin;
+  scrollbar-color:theme('colors.ink-600') transparent;
+}
