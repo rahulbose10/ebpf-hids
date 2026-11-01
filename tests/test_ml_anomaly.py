@@ -82,13 +82,16 @@ def test_synthetic_model_defaults_to_gauge_only(trained):
     assert ml_anomaly.load(folder, alerting=True).alerting is True
 
 
-def test_constant_hour_is_ignored_so_the_clock_cannot_raise_alarms(one_hour):
+def test_the_clock_cannot_raise_alarms(one_hour, trained):
     X, model = one_hour
-    assert "hour_of_day" in model.prep.ignored_names()
-    at_3 = median_row(X)
-    at_14 = at_3.copy()
-    at_14[COL["hour_of_day"]] = 14
-    assert model.score(at_3) == model.score(at_14)
+    _, folder = trained
+    for X_used, m in ((X, model), (generate_baseline_matrix(400, seed=1), ml_anomaly.load(folder))):
+        assert "hour_of_day" in m.prep.ignored_names()
+        at_3 = median_row(X_used)
+        at_3[COL["hour_of_day"]] = 3
+        at_14 = at_3.copy()
+        at_14[COL["hour_of_day"]] = 14
+        assert m.score(at_3) == m.score(at_14)
 
 
 def test_never_seen_ptrace_trips_the_limit(one_hour):

@@ -234,7 +234,8 @@ def repeat_runs(X, args, source, source_note):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m scripts.train_ml",
                                      description="Train the L3 models and print what was measured.")
-    parser.add_argument("--baseline", help=".npy matrix from scripts.capture_baseline, instead of synthetic data")
+    parser.add_argument("--baseline", nargs="+", metavar="NPY",
+                        help="one or more .npy matrices from scripts.capture_baseline, instead of synthetic data")
     parser.add_argument("-n", type=int, default=DEFAULT_N, help="synthetic rows when no --baseline")
     parser.add_argument("--contamination", type=float, default=ml_anomaly.CONTAMINATION)
     parser.add_argument("--autoencoders", type=int, default=ml_anomaly.AE_COUNT)
@@ -250,10 +251,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.baseline:
-        X = np.load(args.baseline)
-        if X.ndim != 2 or X.shape[1] != N_FEATURES:
-            parser.error(f"{args.baseline} has shape {X.shape}, expected (rows, {N_FEATURES})")
-        source, source_note = "baseline", f"{Path(args.baseline).name}, captured on a real host"
+        parts = [np.load(path) for path in args.baseline]
+        for path, part in zip(args.baseline, parts):
+            if part.ndim != 2 or part.shape[1] != N_FEATURES:
+                parser.error(f"{path} has shape {part.shape}, expected (rows, {N_FEATURES})")
+        X = np.vstack(parts)
+        names = " + ".join(f"{Path(path).name} {len(part)}" for path, part in zip(args.baseline, parts))
+        source, source_note = "baseline", f"{names}, captured on a real host"
     else:
         X = generate_baseline_matrix(args.n, SEED)
         source, source_note = "synthetic", f"scripts/gen_baseline.py, seed {SEED}"

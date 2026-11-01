@@ -30,7 +30,7 @@ COL = {name: i for i, name in enumerate(FEATURE_NAMES)}
 LOG_FEATURES = ("exec_count", "file_write_count", "file_write_rate", "connect_count", "connect_rate",
                 "lifetime_sec", "burst_rate", "distinct_files_written", "distinct_dst", "ptrace_count",
                 "setuid_count")
-MODEL_SKIP = ("uid",)
+MODEL_SKIP = ("uid", "hour_of_day")
 AGE_FEATURES = ("lifetime_sec", "file_write_count", "connect_count", "distinct_files_written", "distinct_dst")
 LIMIT_FEATURES = ("exec_count", "ptrace_count", "setuid_count", "file_write_rate", "connect_rate",
                   "burst_rate", "dst_per_sec")

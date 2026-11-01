@@ -63,7 +63,7 @@ That trains on 2500 synthetic normal processes and prints false positives on hel
 
 An event is flagged if any of three checks says so. The Isolation Forest catches unusual combinations inside the range it saw in training. Five small autoencoders, averaged, catch rows they cannot rebuild. The limits catch anything 1.5 times past the largest value the baseline ever showed, on exec_count, ptrace_count, setuid_count, the write and connect rates, burst_rate and new destinations per second. The forest cannot see past its training range, which is why the limits exist.
 
-Before the forest and the autoencoders see a row, counts and rates go through log1p so one busy Firefox does not squash everything else. Counts that only grow with age (lifetime, total writes, total connects, distinct files and destinations) are capped at the baseline maximum, so an old process is not suspicious for being old. A feature that never changed in training is left out; on a capture made inside one hour that is hour_of_day, which would otherwise flag every event outside that hour. uid is always left out because sudo flips it between 1000 and 0 inside one process, and ran_as_root already says the process became root.
+Before the forest and the autoencoders see a row, counts and rates go through log1p so one busy Firefox does not squash everything else. Counts that only grow with age (lifetime, total writes, total connects, distinct files and destinations) are capped at the baseline maximum, so an old process is not suspicious for being old. A feature that never changed in training is left out, and two are always left out. hour_of_day, because a few capture sessions only cover a few hours of the day and the model would learn that normal only happens at those hours. uid, because sudo flips it between 1000 and 0 inside one process, and ran_as_root already says the process became root.
 
 TensorFlow is only needed to train the autoencoders (`pip install tensorflow`, Python 3.12 or older on Windows). Their weights are saved as plain arrays in autoencoder.npz, so loading and scoring never need it. Without TensorFlow, training runs the forest and the limits only.
 
@@ -75,7 +75,11 @@ A model trained on synthetic data is gauge only: it scores, the console shows th
     python3 -m scripts.capture_baseline server/ml/captures/baseline.jsonl --boot-epoch <number from the first line>
     python3 -m scripts.train_ml --baseline server/ml/baseline.npy --repeat 4 --check samples/events.jsonl
 
-The false positive number that counts comes from a second capture the model never saw. Record another session at a different time and pass it to --check.
+One session is not enough. Normal on a desktop depends heavily on what you happened to do, and a model trained on a light browsing session flags a heavy one. Capture at least two different sessions, turn each into its own .npy with capture_baseline -o, and train on all of them:
+
+    python3 -m scripts.train_ml --baseline server/ml/baseline.npy server/ml/session2.npy --repeat 4
+
+The false positive number that counts comes from a session the model never saw. Train on one session and --check the other, both ways round, then train on all of them and confirm on a fresh capture.
 
 A model trained with --baseline is allowed to alert. That assumes the host was clean while capturing; if it was already compromised, the model learns the compromise as normal.
 
