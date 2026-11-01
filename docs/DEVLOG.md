@@ -305,3 +305,11 @@
 - sklearn has a fixed cost per call that was too slow for scoring every event, so single rows walk the trees as numpy arrays. Same scores, timings in results.md.
 - Report from my run is in docs/results.md. The synthetic model flags most of samples/events.jsonl and lifetime_sec is far outside training, the train/serve skew a real baseline is meant to fix. The forest never split on exec_count or ptrace_count, both constant in the synthetic data.
 - Still open: real host baseline on the VM; gen_replay.py, evaluate.py and measure.py; UNLINK, RENAME, MPROTECT, MODULE, BIND and CHMOD are not in the vector; hour_of_day is raw 0 to 23; anomaly scores live in memory only until L4 stores them.
+
+## 2026-11-01 - L3 anomaly layer, real host baseline on the VM
+- Three captures of normal use on the VM, about 15 minutes each, 0 dropped events: 5181, 14593 and 5449 events.
+- A model trained on one session flagged 73.07% of the next session while flagging 4.7% of its own. It learned a quarter hour, not the machine.
+- Reworked the preprocessing: log scale for counts and rates, age features capped, constant features plus uid and hour_of_day dropped. Five averaged autoencoders instead of one, and learned limits on seven features for what the forest cannot see past its training range.
+- Trained on sessions 1 and 2, checked on session 3 which it never saw: 3.43% of events flagged, from 12 of 633 processes, mostly LibreOffice and Rhythmbox, which were new to it. Holdout false alarms 1.22% to 2.43% over the extra seeds, synthetic attacks 78% to 90%. 0.35 ms per event on the VM.
+- That is still 20 ML alerts in 15 minutes of normal use, so ML-ANOM stays off by default and the score is a gauge. The forest flagged nothing in the final run; detection comes from the autoencoder and the limits.
+- Still open: privesc only 37.5% for the model (L2 suid_shell covers it), L4 loader must pass alerting=False unless --ml-alerting, more varied capture sessions, six event types still outside the vector.

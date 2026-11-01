@@ -45,6 +45,23 @@ def read_lines(path):
                 yield line
 
 
+def replay_rows(path, boot_epoch=None):
+    recorder = Recorder()
+    engine = Engine(anomaly_model=recorder, featurize=featurizer(boot_epoch))
+    rows, meta = [], []
+    for line in read_lines(path):
+        recorder.last = None
+        try:
+            evt = json.loads(line)
+            engine.process_event(evt)
+        except (ValueError, TypeError):
+            continue
+        if recorder.last is not None:
+            rows.append(recorder.last)
+            meta.append({"pid": int(evt["pid"]), "comm": str(evt["comm"]), "type": str(evt["type"])})
+    return np.asarray(rows, dtype=float).reshape(-1, N_FEATURES), meta
+
+
 def replay_vectors(path, boot_epoch=None, min_events=MIN_EVENTS, per_pid_cap=PER_PID_CAP):
     recorder = Recorder()
     engine = Engine(anomaly_model=recorder, featurize=featurizer(boot_epoch))
