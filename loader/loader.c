@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
+#include <glob.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include "../bpf/common.h"
@@ -41,6 +42,15 @@ static const char *const type_names[] = {
 	[EVT_CHMOD] = "CHMOD",
 	[EVT_CORRELATED] = "CORRELATED",
 	[EVT_PTRACE_CHECK] = "PTRACE_CHECK",
+	[EVT_READ] = "READ",
+};
+
+static const char *const sensitive_globs[] = {
+	"/etc/shadow",
+	"/etc/gshadow",
+	"/etc/sudoers",
+	"/root/.ssh/id_*",
+	"/home/*/.ssh/id_*",
 };
 
 static void on_signal(int sig)
@@ -137,6 +147,45 @@ fail:
 	return NULL;
 }
 
+static int add_sensitive(int fd, const char *path)
+{
+	char key[DETAIL_LEN] = { 0 };
+	__u8 one = 1;
+	size_t len = strlen(path);
+
+	if (len == 0 || len >= sizeof(key))
+		return 0;
+	if (len > 4 && strcmp(path + len - 4, ".pub") == 0)
+		return 0;
+	memcpy(key, path, len);
+	return bpf_map_update_elem(fd, key, &one, BPF_ANY) == 0;
+}
+
+static int fill_sensitive(struct bpf_object **objs, size_t nobjs)
+{
+	glob_t g;
+	size_t i, j;
+	int fd = -1;
+	int n = 0;
+
+	for (i = 0; i < nobjs && fd < 0; i++) {
+		if (objs[i])
+			fd = bpf_object__find_map_fd_by_name(objs[i], "sensitive");
+	}
+	if (fd < 0)
+		return -1;
+
+	for (i = 0; i < ARRAY_SIZE(sensitive_globs); i++) {
+		memset(&g, 0, sizeof(g));
+		if (glob(sensitive_globs[i], 0, NULL, &g) == 0) {
+			for (j = 0; j < g.gl_pathc; j++)
+				n += add_sensitive(fd, g.gl_pathv[j]);
+		}
+		globfree(&g);
+	}
+	return n;
+}
+
 static int try_attach(struct bpf_object *obj, struct bpf_link **links, int *nlinks)
 {
 	struct bpf_program *prog;
@@ -199,6 +248,7 @@ int main(int argc, char **argv)
 	int drops_fd = -1;
 	int nlinks = 0;
 	int up = 0;
+	int nsens;
 	size_t i;
 	long err;
 	int n;
@@ -215,6 +265,12 @@ int main(int argc, char **argv)
 		fprintf(stderr, "no monitor could be loaded, giving up\n");
 		goto out;
 	}
+
+	nsens = fill_sensitive(objs, NUM_OBJS);
+	if (nsens < 0)
+		fprintf(stderr, "warn: no sensitive map, READ events off\n");
+	else
+		fprintf(stderr, "sensitive paths watched: %d\n", nsens);
 
 	rb = ring_buffer__new(events_fd, handle_event, NULL, NULL);
 	err = libbpf_get_error(rb);

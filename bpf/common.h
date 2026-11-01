@@ -22,6 +22,7 @@ enum event_type {
 	EVT_CHMOD,
 	EVT_CORRELATED,
 	EVT_PTRACE_CHECK,
+	EVT_READ,
 };
 
 struct event {
