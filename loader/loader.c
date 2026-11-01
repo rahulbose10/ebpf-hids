@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
@@ -95,7 +96,7 @@ static int handle_event(void *ctx, void *data, size_t size)
 	       e->kts / 1e9, e->pid, e->ppid, e->uid);
 	print_json_string(e->comm, sizeof(e->comm));
 	printf(",\"type\":\"%s\",\"detail\":", type_name);
-	print_json_string(e->detail, sizeof(e->detail));
+	print_json_string(e->detail, size - offsetof(struct event, detail));
 	printf("}\n");
 	return 0;
 }

@@ -4,8 +4,6 @@
 #include "common.h"
 #include "path.h"
 
-#define PATH_PART 60
-
 char LICENSE[] SEC("license") = "GPL";
 
 struct {
@@ -13,16 +11,27 @@ struct {
 	__uint(max_entries, 256 * 1024);
 } events SEC(".maps");
 
-static const char rename_fmt[] = "%s -> %s";
+struct rename_buf {
+	char buf[LONG_DETAIL_LEN];
+};
 
-static __always_inline struct event *new_event(__u32 type)
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, struct rename_buf);
+} rename_buf SEC(".maps");
+
+static __always_inline void *new_record(__u64 size, __u32 type)
 {
 	struct task_struct *task;
 	struct event *e;
 
-	e = RESERVE_EVENT();
-	if (!e)
-		return e;
+	e = bpf_ringbuf_reserve(&events, size, 0);
+	if (!e) {
+		count_drop();
+		return 0;
+	}
 
 	task = (struct task_struct *)bpf_get_current_task();
 
@@ -48,7 +57,7 @@ static __always_inline int emit_unlink(int dfd, const char *path)
 	if (!p)
 		return 0;
 
-	e = new_event(EVT_UNLINK);
+	e = new_record(sizeof(*e), EVT_UNLINK);
 	if (!e)
 		return 0;
 
@@ -60,31 +69,41 @@ static __always_inline int emit_unlink(int dfd, const char *path)
 static __always_inline int emit_rename(int olddfd, const char *oldpath,
 				       int newdfd, const char *newpath)
 {
-	char oldbuf[PATH_PART] = {};
-	char newbuf[PATH_PART] = {};
 	struct path_scratch *s;
+	struct rename_buf *r;
+	struct event_long *e;
 	const char *p;
-	struct event *e;
-	__u64 args[2];
+	__u32 key = 0;
+	__u64 n = 0;
+	long len;
 
 	s = get_scratch();
-	if (!s)
+	r = bpf_map_lookup_elem(&rename_buf, &key);
+	if (!s || !r)
 		return 0;
 
 	p = abs_path(s, olddfd, oldpath);
-	if (p)
-		bpf_probe_read_kernel_str(oldbuf, sizeof(oldbuf), p);
+	if (p) {
+		len = bpf_probe_read_kernel_str(r->buf, PATH_BUF, p);
+		if (len > 1)
+			n = len - 1;
+	}
+	n &= PATH_MASK;
+	r->buf[n] = ' ';
+	r->buf[n + 1] = '-';
+	r->buf[n + 2] = '>';
+	r->buf[n + 3] = ' ';
+	r->buf[n + 4] = 0;
+
 	p = abs_path(s, newdfd, newpath);
 	if (p)
-		bpf_probe_read_kernel_str(newbuf, sizeof(newbuf), p);
+		bpf_probe_read_kernel_str(&r->buf[n + 4], PATH_BUF, p);
 
-	e = new_event(EVT_RENAME);
+	e = new_record(sizeof(*e), EVT_RENAME);
 	if (!e)
 		return 0;
 
-	args[0] = (__u64)oldbuf;
-	args[1] = (__u64)newbuf;
-	bpf_snprintf(e->detail, sizeof(e->detail), rename_fmt, args, sizeof(args));
+	bpf_probe_read_kernel(e->detail, sizeof(e->detail), r->buf);
 	SUBMIT_EVENT(e);
 	return 0;
 }

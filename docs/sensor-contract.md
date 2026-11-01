@@ -19,7 +19,7 @@ Status lines ("sensor up", "dropped events") go to stderr, never stdout.
 | PTRACE | target_pid=1234 | attach and seize only, refused attempts included |
 | SETUID | old_uid=1000 new_uid=0 | setuid, setreuid, setresuid; threaded programs give one event per thread |
 | UNLINK | /tmp/x | |
-| RENAME | /tmp/old -> /tmp/new | each side cut at 59 chars |
+| RENAME | /tmp/old -> /tmp/new | both paths in full, up to 511 characters each, so this detail can be up to 1026 characters while every other type stays under 128 |
 | MPROTECT | addr=0x7f12345000 prot=rwx suppressed=41 | exec remaps only, 1 per pid per second; suppressed = remaps dropped since that pid's previous event |
 | MODULE | dummy.ko or memory_image len=12345 | memory_image means init_module from a buffer, no file |
 | CHMOD | /tmp/x mode=4755 | mode is always 4 octal digits |
