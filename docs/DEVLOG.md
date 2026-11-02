@@ -373,3 +373,4 @@ The 31 July 2026 dates on this entry and the three after it are the original aut
 - SSH key created after the sensor started and read 12.0 s later: 1 READ, 1 alert.
 - execl("/bin/sh") on a string literal from a setuid launcher: EXEC detail /bin/sh, suid_shell fired. 0 empty EXEC details in the run.
 - Still open: cat ./shadow is missed (L1's measurement, not tried here). A key read within 10 s of creation is missed. snap-confine not retested. A key that exists at sensor start never tested. samples/events.jsonl predates all of today's sensor changes.
+- server/ioc.py did not look at READ events, so a path IOC such as /etc/shadow never enriched a credential_access alert raised by a READ. Added READ to PATH_EVENTS. New test fails without the change. 248 tests pass.
