@@ -190,7 +190,7 @@ Live pipeline `sudo ./loader/loader | tee | python -m server.ingest`, rules only
 
 The doubles are not extra detections: the ptrace, mprotect and modprobe triggers were run twice after a broken paste, log_tampering matched both the touch and the rm, and suid_backdoor matched chmod 4755 on two files.
 
-suid_shell missed. The launcher was a setuid root binary calling setuid(0) and then execl("/bin/sh", ...). The sensor saw SETUID old_uid=1000 new_uid=0 and then an EXEC, but the EXEC detail was empty, so the process still looked like su_launch and not a shell. The same launcher with "/bin/sh" copied into a stack buffer first reported /bin/sh, and suid_shell fired (separate run, 130 events, 2 alerts: suid_shell and suid_backdoor). The only difference is where the string lives. A literal in a page the program never touched cannot be read by the sensor at exec time. Reported to L1. Empty exec paths: 1 of 528 EXEC in the first idle run (snap-confine), 1 of 133 in the attack run.
+suid_shell missed. The launcher was a setuid root binary calling setuid(0) and then execl("/bin/sh", ...). The sensor saw SETUID old_uid=1000 new_uid=0 and then an EXEC, but the EXEC detail was empty, so the process still looked like su_launch and not a shell. The same launcher with "/bin/sh" copied into a stack buffer first reported /bin/sh, and suid_shell fired (separate run, 130 events, 2 alerts: suid_shell and suid_backdoor). The only difference is where the string lives. A literal in a page the program never touched cannot be read by the sensor at exec time. Reported to L1, fixed on main in 5260149, retested in the section After L1 merge 5260149. Empty exec paths: 1 of 528 EXEC in the first idle run (snap-confine), 1 of 133 in the attack run.
 
 So all 14 rules have fired on real sensor events, suid_shell only with the stack buffer launcher.
 
@@ -212,13 +212,35 @@ IPS BLOCK lines from ips_enforce are a separate stream. Fed to server.ingest the
 
 Long RENAME detail: db.py stores detail as TEXT and nothing in server/ cuts it, the console only shortens it on screen with CSS. Checked by reading the code, not tested end to end with a 1026 character RENAME.
 
+### After L1 merge 5260149
+
+L1 fixed the three limits from this morning's note: the empty EXEC path, relative READ paths, and SSH keys created after the sensor started. No rule or engine code changed for this. One live run to see what the engine does with the new stream. Sensor into ingest, triggers typed by hand. Before the run: 247 tests passed and the samples replay was unchanged at 160 events and 3 alerts. The raw recording is ~/hids-runs/l1fix.jsonl, not in the repo.
+
+The run: 241 events, 6 alerts, 0 bad lines, 0 engine errors, 0 dropped events. The sensor reported 3 sensitive paths watched at start. The 6 alerts were 4 credential_access, 1 suid_backdoor and 1 suid_shell.
+
+All 11 READ events in the run:
+
+    12994 sudo  /etc/sudoers, /etc/shadow           no alert
+    12997 cat   /etc/shadow (uid 1000)              credential_access
+    13000 sudo  /etc/sudoers, /etc/shadow           no alert
+    13002 cat   /etc/shadow (uid 0, under sudo)     credential_access
+    13008 cat   /home/vesper/.ssh/id_lab18          credential_access
+    13017 sudo  /etc/sudoers, /etc/shadow           no alert
+    13020 sudo  /etc/sudoers, /etc/shadow           no alert
+
+Relative READ. `cd /etc && cat shadow` as uid 1000 gave a READ from cat with detail /etc/shadow, not shadow, and credential_access fired on it. The open was refused for that user and the sensor still emitted the READ. The same read through sudo gave a second READ from cat and a second alert. The four sudo processes in the run each read /etc/sudoers and /etc/shadow and none of them alerted, so the alert L1 saw came from cat, not from sudo. `cat ./shadow` was not tried.
+
+SSH key created after start. ~/.ssh/id_lab18 was created while the sensor ran. The create itself is a write-intent OPEN from bash, which credential_access also flags (pid 11605). cat read the file 12.0 s later by kernel timestamps (17588.807 to 17600.823) and got one READ and one alert. A read inside the first 10 seconds was not tried, L1 says it is missed. No key existed when the sensor started, so a key that was already there is still untested.
+
+Empty EXEC path. The launcher was a setuid root binary calling setuid(0) and then execl("/bin/sh", ...) on a string literal. That is the shape that gave an empty EXEC path this morning, but it is a newly compiled binary and not the same file. The EXEC detail was /bin/sh with comm su_launch3, suid_shell fired, and suid_backdoor fired on the chmod 4755. The run had 0 EXEC events with an empty detail and 1 with /bin/sh. snap-confine, the other source of an empty EXEC this morning, was not retested.
+
 ## Known blind spots
 
-credential_access sees the path as the caller typed it. `cd /etc && cat shadow` reports `shadow`, which the rule does not match. Not tested live.
+credential_access sees a relative READ as an absolute path since L1 merged 5260149: `cd /etc && cat shadow` now gives `/etc/shadow` and alerts. The sensor does not normalize `.` and `..`, so `cat ./shadow` is still missed. That form was not tried on the VM, it is L1's own measurement.
 
-SSH private keys are only watched if they exist when the loader starts. None exist on the VM, so key reads are untested.
+SSH private keys are watched from a list the loader re-reads every 10 seconds. A key created after the sensor started and read 12 seconds later raised a READ and an alert. A read inside those first 10 seconds is missed (L1's measurement, not repeated here). A key that existed when the sensor started is still untested, the VM has none.
 
-READ and EXEC detail are still the path as typed. OPEN, UNLINK, RENAME and CHMOD are absolute now.
+READ detail is an absolute path now, like OPEN, UNLINK, RENAME and CHMOD. EXEC detail is still the path as the program passed it, except that an empty path is filled in by the sensor from the kernel's own copy.
 
 A pure rm wiper no longer raises ransomware_burst. A script that writes one file and then deletes 25 more inside 5 seconds still does. Ransomware working inside a routine churn folder (package caches, browser and mail profiles, ~/.cache, /tmp/node-compile-cache) is not counted.
 
@@ -226,7 +248,7 @@ Each exclusion by exec path is a hole for that one program: shellcode injected i
 
 A process that sets its own comm to cron with no EXEC event can read /etc/shadow without an alert. A gdm-session-worker started before the sensor has no exec path and would alert.
 
-suid_shell misses a launcher whose shell path the sensor cannot read (empty EXEC detail). Needs the L1 fix.
+The empty EXEC path that hid suid_shell is fixed in the sensor (5260149). It was retested with a string literal launcher, not with snap-confine.
 
 Processes that started before the sensor have no EXEC event, so their exe_name falls back to comm, which can be a thread name.
 
