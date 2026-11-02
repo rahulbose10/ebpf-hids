@@ -264,11 +264,21 @@ Synthetic, runs anywhere:
 Real host, on the VM. The captures stay on the VM because they hold real paths; only the .npy matrices of numbers are used for training.
 
     python3 -c "import time; print(round(time.time() - time.monotonic()))"
-    sudo ./loader/loader > server/ml/captures/session3.jsonl
-    python -m scripts.capture_baseline server/ml/captures/baseline.jsonl --boot-epoch <epoch> -o server/ml/baseline.npy
-    python -m scripts.train_ml --baseline server/ml/baseline.npy server/ml/session2.npy --repeat 4 --check server/ml/captures/session3.jsonl --boot-epoch <epoch>
+    sudo ./loader/loader > server/ml/captures/new2.jsonl
+    python -m scripts.capture_baseline server/ml/captures/new2.jsonl --boot-epoch <epoch> -o server/ml/new2.npy
+    python -m scripts.train_ml --baseline server/ml/new1.npy server/ml/new2.npy server/ml/new3.npy --repeat 4
 
 The first line prints the boot time as a unix epoch, which turns the kernel ts (seconds since boot) into a clock time. It changes on every reboot. The full report of the last run is written to server/ml/last_report.txt.
+
+A capture taken while the server runs, so it matches a demo, needs the server's own lines removed first, because the live pipeline drops them by pid:
+
+    sudo ./loader/loader | tee server/ml/captures/live_final.jsonl | python3 -m server.app
+    pgrep -f server.app
+    grep -v '"pid":<server pid>,' server/ml/captures/live_final.jsonl > server/ml/captures/final.jsonl
+
+Scoring a file with the saved model, without training again:
+
+    python -c "from scripts.train_ml import check_file; from server import ml_anomaly; check_file(ml_anomaly.load(), 'server/ml/captures/final.jsonl')"
 
 ## Synthetic baseline (Windows, 2026-10-31)
 
@@ -307,7 +317,9 @@ The forest only cuts between the smallest and largest value it saw, so 500 conne
 
 The verdict is forest OR autoencoder OR limits.
 
-## Real host baseline (VM, Ubuntu 22.04, kernel 6.8, 2026-11-01)
+## First real baseline, old sensor (VM, Ubuntu 22.04, kernel 6.8, 2026-11-01)
+
+This model is replaced by the one in the next section. Kept because it shows why one session is not enough.
 
 Three captures of normal use, about 15 minutes each, `sudo ./loader/loader > file`, dropped events 0 every time. Firefox with several tabs, Thunderbird, terminal work, ping, curl, sudo apt update. The third session also had LibreOffice and Rhythmbox open. No attack sims in any of them.
 
@@ -378,20 +390,135 @@ The forest flagged nothing in this run, normal or attack. Its score still feeds 
 
 privesc is the weak spot at 37.5% on average. The model only sees counts and rates, and a short sudo looks like any other short process that becomes root. The suid_shell rule in L2 is what catches that case. In the same way, a reverse shell is caught by the network_parent_shell rule whatever the model says.
 
-### Decision: ML alerting stays off by default
+On a live run with the server and the console open, this model flagged far more than on these sensor-only captures: 69.3% and 74.9% in the two runs of 2026-11-01. The section below finds out why.
 
-20 ML alerts in 14.9 minutes of normal use is too many for an alert queue where the L2 rules raised 0 over 30 minutes. 81 per hour also overstates it: the engine repeats an alert for the same process every 60 seconds, so soffice.bin open for ten minutes counts several times. Either way it is noise for whoever watches the console.
+## Retrained on the new sensor (VM, 2026-11-02)
 
-So the anomaly score is shown per process as a gauge, and ML-ANOM alerts only when the server is started with --ml-alerting. A model trained with --baseline turns alerting on by itself (data_source "baseline"), so the L4 loader has to pass alerting=False unless that flag is given. TODO: do that when the model is hooked into server/app.py.
+L1 session 6 changed what the model sees: EXEC only for an exec that succeeded (a PATH search used to give one EXEC per failed try), absolute paths for OPEN, UNLINK, RENAME and CHMOD, and the new READ type, which does not count toward feature 0 but moves lifetime_sec and burst_rate. The 2026-11-01 captures came from the old sensor, so none of them are used any more.
+
+After rebuilding the loader: 248 tests passed, and a test read of /etc/shadow gave 3 READ events with 0 dropped.
+
+### Old model on the new sensor
+
+Live run with the server and the console, stream saved with tee, 16.1 min of kernel time:
+
+    ingest: 6112 events, 0 alerts, 0 bad lines, 0 engine errors, 3492 own events dropped, 8 reordered, 0 late, 0 fan-out errors, 6112 scored by ML, 119 flagged
+    dropped events: 0
+
+1.95% flagged. This was a quiet session, 42 processes, so it cannot be compared with the 69.3% and 74.9% above.
+
+A stream saved with tee holds the server's own events, which the live pipeline drops by pid. Replayed as it is, the file showed 9604 events and python3 (the server) on top of the flagged list with 2242. With the server's pid removed by grep the replay flags the same 119 as the live server, so L4 scores the way L3 does.
+
+### Three new sessions and one held back
+
+    file     what                                          events   processes   training rows
+    new1     the live run above, server lines removed        6112          42             633
+    new2     sensor only, about 15 min of varied use         36235         651            2407
+    new3     live run, console open, server lines removed    11319         529            1347
+    final    live run, console open, server lines removed    10716         501   never trained on
+
+new2 was the varied session: Firefox, Thunderbird, LibreOffice, Files, Rhythmbox and a list of terminal commands (apt update, git, pytest, nano, ping, curl, top). new3 and final had the same kind of use with the console open in a Firefox tab the whole time, which is how the system runs in a demo. dropped events 0 on every run where the loader line was kept.
+
+### First try: new1 and new2
+
+3040 rows. Holdout false alarms 2.19% mean over five seeds (1.54% to 3.07%), synthetic attacks 58.25% mean.
+
+Live on new3 with this model:
+
+    ingest: 11319 events, 0 alerts, 0 bad lines, 0 engine errors, 13200 own events dropped, 45 reordered, 0 late, 0 fan-out errors, 11319 scored by ML, 2185 flagged
+
+19.30% flagged. Almost all of it was one process, Firefox: its Cache2 I/O thread with 1448 flags and its Socket Thread with 349. Only Firefox and systemd-resolve were flagged at all. The old model on the same file flagged 64.59%, so the new sensor data already helped, but neither training session had a Firefox polling the console every second while it cached pages. The same busy Firefox is the most likely reason for the 69.3% and 74.9% of 2026-11-01.
+
+### Second try: new1, new2 and new3
+
+    python -m scripts.train_ml --baseline server/ml/new1.npy server/ml/new2.npy server/ml/new3.npy --repeat 4 2>&1 | tail -40
+
+    L3 training report
+      data source        baseline (4387 rows, new1.npy 633 + new2.npy 2407 + new3.npy 1347, captured on a real host)
+      train / holdout    3728 / 659
+      contamination      0.01
+      autoencoder        5 networks averaged, 150 epochs, threshold 0.5979 (99.5th percentile of training error)
+      ignored            hour_of_day, uid, ptrace_count (no spread in training, so the forest and autoencoder cannot learn them)
+      limits             1.5 x past the baseline max: exec_count > 5, ptrace_count > 0.5, setuid_count > 17, file_write_rate > 3.38e+04, connect_rate > 316, burst_rate > 384, dst_per_sec > 29
+      holdout normal     forest 1.06% | autoencoder 1.21% | limits 0.00% | combined 2.28% flagged
+      synthetic attacks  forest 10.00% | autoencoder 72.00% | limits 36.00% | combined 92.00% flagged (100 rows, 5 kinds)
+        reverse_shell    forest 0.00% | autoencoder 95.00% | limits 0.00% | combined 95.00%
+        privesc          forest 0.00% | autoencoder 70.00% | limits 0.00% | combined 70.00%
+        mass_write       forest 0.00% | autoencoder 95.00% | limits 0.00% | combined 95.00%
+        injection        forest 0.00% | autoencoder 0.00% | limits 100.00% | combined 100.00%
+        scanner          forest 50.00% | autoencoder 100.00% | limits 80.00% | combined 100.00%
+      mean iforest score normal 0.1509 | attack 0.0792
+      lifetime_sec       training max 979.03 s
+      features never split on: none
+      edge probe         500 connects on a median process: forest 0.130 (normal), autoencoder error 1.68 vs threshold 0.60, limits none
+      score time         0.33 ms per event (sklearn decision_function on one row 5.66 ms)
+      repeated over 4 more seeds (split, forest and autoencoders all reseeded), combined verdict:
+        holdout normal     mean 2.35% (min 1.67%, max 2.88%)
+        synthetic attacks  mean 64.00% (min 58.00%, max 74.00%)
+          reverse_shell    mean 93.75% (min 90.00%, max 100.00%)
+          privesc          mean 8.75% (min 0.00%, max 15.00%)
+          mass_write       mean 17.50% (min 0.00%, max 60.00%)
+          injection        mean 100.00% (min 100.00%, max 100.00%)
+          scanner          mean 100.00% (min 100.00%, max 100.00%)
+      saved              /home/vesper/ebpf-hids/server/ml
+
+This is the model in server/ml now. The holdout comes from the same sessions it trained on, so the real test is the next one.
+
+### Final check on a session none of the models saw
+
+Live with this model, console open, 16.3 min:
+
+    ingest: 10716 events, 0 alerts, 0 bad lines, 0 engine errors, 12579 own events dropped, 24 reordered, 0 late, 0 fan-out errors, 10716 scored by ML, 284 flagged
+    dropped events: 0
+
+The same file, server lines removed, scored offline by all three models:
+
+    model                                     flagged    ML alerts (60 s dedupe, 16.3 min)
+    2026-11-01, old sensor sessions            59.15%    34, 125 per hour
+    new1 + new2                                34.90%    17,  62 per hour
+    new1 + new2 + new3 (in use)                 2.65%     4,  15 per hour
+
+What the model in use flagged, 284 events from 4 processes out of 501:
+
+    Cache2 I/O (Firefox)               forest x217
+    Socket Thread (Firefox)            forest x54
+    python3 and software-proper        autoencoder x5    (one process, pid 117505, under two names)
+    firefox and DNS resolver threads   forest x5
+    gnome-sudoku                       autoencoder x2
+    ping                               autoencoder x1
+
+95% of it is still Firefox's cache and socket threads, now at a level that stays a few percent. gnome-sudoku was opened in this session for the first time, so it is new, not hostile.
+
+What made the difference was not the model but the training data: one session recorded the way the system actually runs, with the console open, took the same file from 34.90% to 2.65%.
+
+### What the ML is weak at
+
+mass_write averages 17.5% over five seeds and swings from 0 to 60%. new2 had apt update, pytest and LibreOffice saves, which write many files fast, and the learned file_write_rate limit went up to 3.38e+04. The model only sees counts and rates, never names, so ransomware writing .locked files looks like apt writing package lists. ransomware_burst in L2 looks at the renames and catches it.
+
+privesc averages 8.75%. A short process that becomes root looks like every sudo in the baseline. suid_shell in L2 looks at the uid change and catches it.
+
+reverse_shell, injection and scanner stay at 90% or more on every seed.
+
+## Decision: ML alerting stays off by default
+
+With the old model on the old sensor the ML would have raised 81 alerts per hour of normal use. The model in use raises 15 per hour on a session it never saw, while the rules raise 0 over the same run. Better, but still noise in an alert queue, and it misses most of mass_write and privesc anyway.
+
+So the score is a gauge per process, and ML-ANOM alerts only when the server is started with --ml-alerting. server/app.py loads the model with alerting=bool(--ml-alerting), so a model trained on real captures does not turn alerting on by itself inside the server.
 
 ## Scoring cost
 
-The engine scores on every event, and sklearn's decision_function has a fixed cost per call that is too slow for bursts. score() walks the 200 trees as numpy arrays for single rows and runs the autoencoder's dense layers as plain matrix products, so TensorFlow is only needed for training. tests/test_ml_anomaly.py checks the single row path against sklearn. On the VM: 0.35 ms per event against 6.28 ms for sklearn on one row.
+The engine scores on every event, and sklearn's decision_function has a fixed cost per call that is too slow for bursts. score() walks the 200 trees as numpy arrays for single rows and runs the autoencoder's dense layers as plain matrix products, so TensorFlow is only needed for training. tests/test_ml_anomaly.py checks the single row path against sklearn. On the VM: 0.35 ms per event against 6.28 ms for sklearn on one row with the 2026-11-01 model, 0.33 ms against 5.66 ms with the model in use.
 
 ## Still open
 
-Three sessions on one VM with one user is a small sample. A longer and more varied capture (a full working day, package installs, a build) would most likely bring the false alarm rate down further, but that is a guess until it is measured.
+One VM, one user, five captures of about 15 minutes. A full working day would most likely bring the rate down further, but that is a guess until it is measured.
 
-UNLINK, RENAME, MPROTECT, MODULE, BIND and CHMOD are not in the feature vector, so the model is blind to them. The rules see them.
+Busy Firefox with the console open is still 95% of what gets flagged.
 
-Anomaly scores live in memory only until L4 stores them.
+mass_write and privesc are not reliable on the ML, see above.
+
+UNLINK, RENAME, MPROTECT, MODULE, BIND, CHMOD and READ are not in the feature vector, so the model is blind to them. The rules see them.
+
+The model files exist only on the VM, under server/ml, and are not in git. db.py has an anomaly_scores table but nothing writes to it, so scores live in memory only.
+
+samples/events.jsonl predates the new sensor until the final re-capture.
