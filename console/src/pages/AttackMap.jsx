@@ -2,35 +2,20 @@ import { useMemo } from "react";
 import { api, usePoll } from "../api";
 import StatCard from "../components/StatCard";
 
-// /api/mitre is not in the frozen contract yet, so its shape is not agreed
-// with L4. Until it is, accept the shapes L4 is most likely to send. Once the
-// shape is fixed, delete the branches that are not used.
 function getTechniques(data) {
-  if (Array.isArray(data?.techniques)) return data.techniques;
-  if (Array.isArray(data?.coverage)) return data.coverage;
-  if (Array.isArray(data?.matrix)) return data.matrix;
-
-  if (data?.by_technique && typeof data.by_technique === "object") {
-    return Object.entries(data.by_technique).map(([technique, count]) => ({
-      technique,
-      alert_count: count,
-    }));
-  }
-
-  return [];
+  return Array.isArray(data?.techniques) ? data.techniques : [];
 }
 
 function getId(item) {
-  return item.technique ?? item.technique_id ?? item.id ?? "Unknown";
+  return item.technique ?? "Unknown";
 }
 
 function getCount(item) {
-  const value = item.alert_count ?? item.alerts ?? item.count ?? 0;
-  return typeof value === "number" ? value : 0;
+  return typeof item.alert_count === "number" ? item.alert_count : 0;
 }
 
 function getTactic(item) {
-  return item.tactic ?? item.tactic_name ?? "Other techniques";
+  return item.tactic ?? "Other techniques";
 }
 
 // A tile is shaded by its share of the busiest technique. Dark text on a
@@ -99,7 +84,7 @@ export default function AttackMap() {
 
       {error && (
         <div className="mb-3 rounded border border-critical/45 bg-critical/10 px-3 py-2 font-mono text-[11px] text-critical">
-          Could not load /api/mitre. The endpoint may not exist yet on the backend.
+          Could not load /api/mitre: {error.error || "no answer"}
         </div>
       )}
 
@@ -153,8 +138,8 @@ export default function AttackMap() {
                       >
                         <div className="min-w-0">
                           <div className="font-mono text-[12px] font-semibold text-text">{id}</div>
-                          <div className="truncate text-[11px] text-mute" title={item.name ?? item.technique_name ?? ""}>
-                            {item.name ?? item.technique_name ?? "name not provided"}
+                          <div className="truncate text-[11px] text-mute" title={item.name ?? ""}>
+                            {item.name ?? "-"}
                           </div>
                         </div>
 

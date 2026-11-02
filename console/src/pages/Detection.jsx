@@ -19,22 +19,27 @@ function gaugeNote(health) {
     : base;
 }
 
-function aeRatio(latest, threshold) {
-  if (typeof latest?.recon_error !== "number" || typeof threshold !== "number" || threshold <= 0) {
+function aeRatio(row, threshold) {
+  if (typeof row?.recon_error !== "number" || typeof threshold !== "number" || threshold <= 0) {
     return null;
   }
-  return latest.recon_error / threshold;
+  return row.recon_error / threshold;
 }
 
-function flaggedBy(latest) {
-  if (!latest?.is_anomaly) return "-";
+function flaggedBy(row) {
+  if (!row?.is_anomaly) return "-";
   const parts = [];
-  if (latest.ae_anomaly) parts.push("autoencoder");
-  if (latest.limit_anomaly) {
-    const names = Array.isArray(latest.over_limit) ? latest.over_limit.join(", ") : "";
+  if (row.iforest_anomaly) parts.push("forest");
+  if (row.ae_anomaly) parts.push("autoencoder");
+  if (row.limit_anomaly) {
+    const names = Array.isArray(row.over_limit) ? row.over_limit.join(", ") : "";
     parts.push(names ? `limits (${names})` : "limits");
   }
   return parts.length ? parts.join(", ") : "model";
+}
+
+function fixed(value, digits = 4) {
+  return typeof value === "number" ? value.toFixed(digits) : "-";
 }
 
 function Field({ label, children }) {
@@ -48,14 +53,64 @@ function Field({ label, children }) {
   );
 }
 
+function ScoreCard({ title, row, threshold, empty }) {
+  const ratio = aeRatio(row, threshold);
+
+  return (
+    <div className="min-w-0 rounded border border-line bg-ink-700/40 px-3 py-2">
+      <div className="eyebrow mb-1">{title}</div>
+      {!row ? (
+        <p className="py-3 font-mono text-[11px] text-mute">{empty}</p>
+      ) : (
+        <dl>
+          <Field label="Process">
+            {row.comm || "-"} <span className="text-mute">pid {row.pid ?? "-"}</span>
+          </Field>
+          <Field label="Kernel ts">
+            <span className="font-mono">{formatKts(row.ts)}</span>
+          </Field>
+          <Field label="Verdict">
+            <span className={row.is_anomaly ? "text-critical" : ""}>
+              {row.is_anomaly ? "anomaly" : "normal"}
+            </span>
+          </Field>
+          <Field label="Flagged by">{flaggedBy(row)}</Field>
+          <Field label="Forest">
+            <span className={`font-mono ${row.iforest_anomaly ? "text-critical" : ""}`}>
+              {fixed(row.iforest_score)}
+            </span>
+            <span className="text-mute"> flags below 0</span>
+          </Field>
+          <Field label="Autoencoder">
+            <span className={`font-mono ${row.ae_anomaly ? "text-critical" : ""}`}>
+              {fixed(row.recon_error)}
+            </span>
+            <span className="text-mute">
+              {ratio === null ? " no autoencoder score" : ` = ${ratio.toFixed(2)}x threshold`}
+            </span>
+          </Field>
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function Detection() {
   const { data } = usePoll(api.alerts, 3000);
   const { data: anomaly } = usePoll(api.anomaly, 3000);
   const { data: health } = usePoll(api.health, 4000);
 
   const alerts = data?.alerts || [];
+  const scores = anomaly?.scores ?? [];
   const latest = anomaly?.latest ?? null;
-  const ratio = aeRatio(latest, anomaly?.ae_threshold);
+  const newestFlagged = scores.find((row) => row.is_anomaly) ?? null;
+  const threshold = anomaly?.ae_threshold;
+  const ratio = aeRatio(latest, threshold);
+  const byCheck = {
+    forest: scores.filter((row) => row.iforest_anomaly).length,
+    autoencoder: scores.filter((row) => row.ae_anomaly).length,
+    limits: scores.filter((row) => row.limit_anomaly).length,
+  };
   const [selected, setSelected] = useState(null);
 
   const picked = selected !== null ? alerts[selected] : null;
@@ -76,7 +131,7 @@ function Detection() {
 
       <section className="panel overflow-hidden">
         <header className="flex h-10 items-center border-b border-line px-4">
-          <span className="eyebrow">Anomaly gauge · autoencoder error / threshold</span>
+          <span className="eyebrow">Anomaly gauge · autoencoder error / threshold, latest scored row</span>
         </header>
 
         <div className="p-4">
@@ -85,13 +140,18 @@ function Detection() {
           <GaugeBar
             fill={ratio === null ? 0 : ratio / 2}
             mark={ratio === null ? null : 0.5}
-            alarm={Boolean(latest?.is_anomaly)}
+            alarm={Boolean(latest?.ae_anomaly)}
           />
           <div className="mt-1 flex justify-between font-mono text-[10px] text-mute">
             <span>0</span>
             <span>{ratio === null ? "no autoencoder score" : "threshold"}</span>
             <span>2x</span>
           </div>
+          <p className="mt-2 text-[11px] text-mute">
+            The bar shows only the autoencoder and turns red only when the autoencoder flags the
+            latest row. A row can also be flagged by the isolation forest or by the feature limits,
+            so the cards below say which check fired.
+          </p>
 
           <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1 font-mono text-[11.5px] text-mute">
             <span>
@@ -102,22 +162,33 @@ function Detection() {
               <strong className="ml-1 text-text">{ratio === null ? "-" : `${ratio.toFixed(2)}x`}</strong>
             </span>
             <span>
-              process{" "}
-              <strong className="ml-1 text-text">{latest ? `${latest.comm} ${latest.pid}` : "-"}</strong>
-            </span>
-            <span>
-              verdict{" "}
-              <strong className="ml-1 text-text">
-                {latest ? (latest.is_anomaly ? "anomaly" : "normal") : "-"}
-              </strong>
-            </span>
-            <span>
-              flagged by <strong className="ml-1 text-text">{flaggedBy(latest)}</strong>
-            </span>
-            <span>
-              flagged in last {anomaly?.scores?.length ?? 0}{" "}
+              flagged in last {scores.length}{" "}
               <strong className="ml-1 text-text">{anomaly?.anomaly_count ?? "-"}</strong>
             </span>
+            <span>
+              forest <strong className="ml-1 text-text">{byCheck.forest}</strong>
+            </span>
+            <span>
+              autoencoder <strong className="ml-1 text-text">{byCheck.autoencoder}</strong>
+            </span>
+            <span>
+              limits <strong className="ml-1 text-text">{byCheck.limits}</strong>
+            </span>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <ScoreCard
+              title="Latest scored row"
+              row={latest}
+              threshold={threshold}
+              empty="Nothing scored yet."
+            />
+            <ScoreCard
+              title={`Newest flagged row in the last ${scores.length}`}
+              row={newestFlagged}
+              threshold={threshold}
+              empty={`No row flagged in the last ${scores.length} scored.`}
+            />
           </div>
         </div>
       </section>
