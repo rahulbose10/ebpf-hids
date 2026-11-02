@@ -53,7 +53,7 @@ function Field({ label, children }) {
   );
 }
 
-function ScoreCard({ title, row, threshold, empty }) {
+function ScoreCard({ title, row, threshold, empty, note }) {
   const ratio = aeRatio(row, threshold);
 
   return (
@@ -91,19 +91,30 @@ function ScoreCard({ title, row, threshold, empty }) {
           </Field>
         </dl>
       )}
+      {note && <p className="pb-1 pt-2 font-mono text-[10.5px] text-mute">{note}</p>}
     </div>
   );
 }
 
 function Detection() {
   const { data } = usePoll(api.alerts, 3000);
-  const { data: anomaly } = usePoll(api.anomaly, 3000);
+  const [kept, setKept] = useState(null);
+  const { data: anomaly } = usePoll(async () => {
+    const result = await api.anomaly();
+    const flagged = result?.scores?.find((row) => row.is_anomaly);
+    if (flagged) {
+      setKept((old) => (old && old.ts >= flagged.ts ? old : flagged));
+    }
+    return result;
+  }, 3000);
   const { data: health } = usePoll(api.health, 4000);
 
   const alerts = data?.alerts || [];
   const scores = anomaly?.scores ?? [];
   const latest = anomaly?.latest ?? null;
-  const newestFlagged = scores.find((row) => row.is_anomaly) ?? null;
+  const keptInWindow = kept
+    ? scores.some((row) => row.ts === kept.ts && row.pid === kept.pid)
+    : false;
   const threshold = anomaly?.ae_threshold;
   const ratio = aeRatio(latest, threshold);
   const byCheck = {
@@ -184,10 +195,17 @@ function Detection() {
               empty="Nothing scored yet."
             />
             <ScoreCard
-              title={`Newest flagged row in the last ${scores.length}`}
-              row={newestFlagged}
+              title="Newest flagged row since this page opened"
+              row={kept}
               threshold={threshold}
-              empty={`No row flagged in the last ${scores.length} scored.`}
+              empty="No row flagged since this page opened."
+              note={
+                kept
+                  ? keptInWindow
+                    ? `Still in the last ${scores.length} scores.`
+                    : `Older than the last ${scores.length} scores, kept here so it can be read.`
+                  : null
+              }
             />
           </div>
         </div>
