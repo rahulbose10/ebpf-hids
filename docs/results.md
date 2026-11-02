@@ -390,7 +390,7 @@ The forest flagged nothing in this run, normal or attack. Its score still feeds 
 
 privesc is the weak spot at 37.5% on average. The model only sees counts and rates, and a short sudo looks like any other short process that becomes root. The suid_shell rule in L2 is what catches that case. In the same way, a reverse shell is caught by the network_parent_shell rule whatever the model says.
 
-On a live run with the server and the console open, this model flagged far more than on these sensor-only captures: 69.3% and 74.9% in the two runs of 2026-11-01. The section below finds out why.
+On live runs with the server on 2026-11-01 this model flagged far more than on these sensor-only captures: 69.3%, and 74.9% in a second run with no console open. Those two runs were not saved, so what drove them cannot be checked now.
 
 ## Retrained on the new sensor (VM, 2026-11-02)
 
@@ -400,14 +400,14 @@ After rebuilding the loader: 248 tests passed, and a test read of /etc/shadow ga
 
 ### Old model on the new sensor
 
-Live run with the server and the console, stream saved with tee, 16.1 min of kernel time:
+Live run with the server, the console open for the first few minutes, stream saved with tee, 16.1 min of kernel time:
 
     ingest: 6112 events, 0 alerts, 0 bad lines, 0 engine errors, 3492 own events dropped, 8 reordered, 0 late, 0 fan-out errors, 6112 scored by ML, 119 flagged
     dropped events: 0
 
 1.95% flagged. This was a quiet session, 42 processes, so it cannot be compared with the 69.3% and 74.9% above.
 
-A stream saved with tee holds the server's own events, which the live pipeline drops by pid. Replayed as it is, the file showed 9604 events and python3 (the server) on top of the flagged list with 2242. With the server's pid removed by grep the replay flags the same 119 as the live server, so L4 scores the way L3 does.
+A stream saved with tee holds the server's own events, which the live pipeline drops by pid. Replayed as it is, the file showed 9604 events and python3 (the server) on top of the flagged list with 2242. With the server's lines removed by grep, the replay matched the live server exactly on both later runs: 2185 of 11319 and 284 of 10716. So L4 scores the way L3 does.
 
 ### Three new sessions and one held back
 
@@ -417,17 +417,17 @@ A stream saved with tee holds the server's own events, which the live pipeline d
     new3     live run, console open, server lines removed    11319         529            1347
     final    live run, console open, server lines removed    10716         501   never trained on
 
-new2 was the varied session: Firefox, Thunderbird, LibreOffice, Files, Rhythmbox and a list of terminal commands (apt update, git, pytest, nano, ping, curl, top). new3 and final had the same kind of use with the console open in a Firefox tab the whole time, which is how the system runs in a demo. dropped events 0 on every run where the loader line was kept.
+new2 was the varied session: Firefox, Thunderbird, LibreOffice, Files, Rhythmbox and a list of terminal commands (apt update, git, pytest, nano, ping, curl, top). new3 and final had the same kind of use with the console open in a Firefox tab, which is how the system runs in a demo. dropped events 0 on every run where the loader line was kept.
 
 ### First try: new1 and new2
 
-3040 rows. Holdout false alarms 2.19% mean over five seeds (1.54% to 3.07%), synthetic attacks 58.25% mean.
+3040 rows. Holdout false alarms 2.19% mean over the four extra seeds (1.54% to 3.07%), synthetic attacks 58.25% mean.
 
 Live on new3 with this model:
 
     ingest: 11319 events, 0 alerts, 0 bad lines, 0 engine errors, 13200 own events dropped, 45 reordered, 0 late, 0 fan-out errors, 11319 scored by ML, 2185 flagged
 
-19.30% flagged. Almost all of it was one process, Firefox: its Cache2 I/O thread with 1448 flags and its Socket Thread with 349. Only Firefox and systemd-resolve were flagged at all. The old model on the same file flagged 64.59%, so the new sensor data already helped, but neither training session had a Firefox polling the console every second while it cached pages. The same busy Firefox is the most likely reason for the 69.3% and 74.9% of 2026-11-01.
+19.30% flagged. Almost all of it was one process, Firefox: its Cache2 I/O thread with 1448 flags and its Socket Thread with 349. The report lists the 15 names with the most flags, and all of them except systemd-resolve are Firefox threads. The old model on the same file flagged 64.59%, so the new sensor data already helped, but neither training session had a Firefox polling the console every second while it cached pages.
 
 ### Second try: new1, new2 and new3
 
@@ -487,21 +487,21 @@ What the model in use flagged, 284 events from 4 processes out of 501:
     gnome-sudoku                       autoencoder x2
     ping                               autoencoder x1
 
-95% of it is still Firefox's cache and socket threads, now at a level that stays a few percent. gnome-sudoku was opened in this session for the first time, so it is new, not hostile.
+95% of it is still Firefox's cache and socket threads, now at a level that stays a few percent. gnome-sudoku is a game, ordinary desktop use.
 
 What made the difference was not the model but the training data: one session recorded the way the system actually runs, with the console open, took the same file from 34.90% to 2.65%.
 
 ### What the ML is weak at
 
-mass_write averages 17.5% over five seeds and swings from 0 to 60%. new2 had apt update, pytest and LibreOffice saves, which write many files fast, and the learned file_write_rate limit went up to 3.38e+04. The model only sees counts and rates, never names, so ransomware writing .locked files looks like apt writing package lists. ransomware_burst in L2 looks at the renames and catches it.
+mass_write averages 17.5% over the four extra seeds and swings from 0 to 60%. new2 had apt update, pytest and LibreOffice saves, which write many files fast, and the learned file_write_rate limit went up to 3.38e+04. The model only sees counts and rates, never names, so ransomware writing .locked files looks like apt writing package lists. ransomware_burst in L2 looks at the renames and catches it.
 
 privesc averages 8.75%. A short process that becomes root looks like every sudo in the baseline. suid_shell in L2 looks at the uid change and catches it.
 
-reverse_shell, injection and scanner stay at 90% or more on every seed.
+reverse_shell, injection and scanner stay at 90% or more on all five runs.
 
 ## Decision: ML alerting stays off by default
 
-With the old model on the old sensor the ML would have raised 81 alerts per hour of normal use. The model in use raises 15 per hour on a session it never saw, while the rules raise 0 over the same run. Better, but still noise in an alert queue, and it misses most of mass_write and privesc anyway.
+With the old model on the old sensor the ML would have raised 81 alerts per hour of normal use. The model in use would raise 15 per hour on a session it never saw, while the rules raised 0 over the same run. Better, but still noise in an alert queue, and it misses most of mass_write and privesc anyway.
 
 So the score is a gauge per process, and ML-ANOM alerts only when the server is started with --ml-alerting. server/app.py loads the model with alerting=bool(--ml-alerting), so a model trained on real captures does not turn alerting on by itself inside the server.
 
@@ -511,7 +511,7 @@ The engine scores on every event, and sklearn's decision_function has a fixed co
 
 ## Still open
 
-One VM, one user, five captures of about 15 minutes. A full working day would most likely bring the rate down further, but that is a guess until it is measured.
+One VM, one user, four captures of about 15 minutes on the new sensor. A full working day would most likely bring the rate down further, but that is a guess until it is measured.
 
 Busy Firefox with the console open is still 95% of what gets flagged.
 
