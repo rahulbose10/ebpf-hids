@@ -38,13 +38,27 @@ static __always_inline void fill_header(struct event *e, __u32 type)
 	bpf_get_current_comm(&e->comm, sizeof(e->comm));
 }
 
-static __always_inline int emit_read(const char *filename)
+static __always_inline int emit_read(int dfd, const char *filename)
 {
 	struct path_key k = {};
+	struct path_scratch *s;
+	const char *p;
 	struct event *e;
 
 	if (bpf_probe_read_user_str(k.path, sizeof(k.path), filename) <= 0)
 		return 0;
+
+	if (k.path[0] != '/') {
+		s = get_scratch();
+		if (!s)
+			return 0;
+		p = abs_path(s, dfd, filename);
+		if (!p)
+			return 0;
+		__builtin_memset(k.path, 0, sizeof(k.path));
+		bpf_probe_read_kernel_str(k.path, sizeof(k.path), p);
+	}
+
 	if (!bpf_map_lookup_elem(&sensitive, &k))
 		return 0;
 
@@ -66,7 +80,7 @@ static __always_inline int emit_open(int dfd, const char *filename, long flags)
 	struct event *e;
 
 	if (!(flags & WRITE_FLAGS))
-		return emit_read(filename);
+		return emit_read(dfd, filename);
 
 	s = get_scratch();
 	if (!s)
