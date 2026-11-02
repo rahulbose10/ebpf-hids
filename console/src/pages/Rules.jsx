@@ -1,9 +1,5 @@
 import { useMemo, useState } from "react";
-import { usePoll } from "../api";
-
-// Same-origin path. Vite proxies /api to the backend in dev, so no host or
-// port is hardcoded and the page also works when served from another machine.
-const API_BASE = "/api";
+import { api, usePoll } from "../api";
 
 // A copy of L2's rule files (server/rules/*.yml on main at 1f3506c), generated
 // by reading the YAML, not typed by hand. It does two jobs: it supplies the
@@ -541,16 +537,8 @@ function RuleCard({ rule, onToggle, busy }) {
   );
 }
 
-async function fetchRules() {
-  const response = await fetch(`${API_BASE}/rules`);
-  if (!response.ok) {
-    throw new Error(`Rules request failed: ${response.status}`);
-  }
-  return response.json();
-}
-
 export default function Rules() {
-  const rulesPoll = usePoll(fetchRules, 5000);
+  const rulesPoll = usePoll(api.rules, 5000);
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState("");
 
@@ -571,18 +559,11 @@ export default function Rules() {
     setActionError("");
 
     try {
-      const response = await fetch(`${API_BASE}/rules/${encodeURIComponent(rule.id)}/toggle`, {
-        method: "POST",
-      });
-
-      if (!response.ok) {
-        throw new Error(`Toggle failed: ${response.status}`);
-      }
-
+      await api.toggleRule(rule.id);
       await rulesPoll.refresh();
     } catch (error) {
       // Do not swap the list for sample data here. Report the failure instead.
-      setActionError(`Could not toggle ${rule.id}: ${error.message}`);
+      setActionError(`Could not toggle ${rule.id}: ${error.error || "request failed"}`);
     } finally {
       setBusyId(null);
     }

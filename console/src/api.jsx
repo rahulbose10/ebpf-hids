@@ -20,10 +20,17 @@ async function req(path, opts = {}) {
   const body = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw body;
+    throw { error: `Request failed (${res.status})`, ...body, status: res.status };
   }
 
   return body;
+}
+
+function send(path, method, payload) {
+  return req(path, {
+    method,
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
 }
 
 export const api = {
@@ -69,6 +76,37 @@ export const api = {
   mitre: () => req("/mitre"),
 
   navigatorDownload: () => req("/navigator/download"),
+
+  rules: () => req("/rules"),
+  toggleRule: (id) => send(`/rules/${encodeURIComponent(id)}/toggle`, "POST"),
+
+  evaluation: () => req("/evaluation"),
+  reportSummary: () => req("/reports/summary"),
+
+  lineage: (pid) => req(`/lineage/${pid}`),
+  tree: (root) => req(`/tree/${root}`),
+
+  enforcement: (limit = 100) => req(`/enforcement?limit=${limit}`),
+  setEnforcement: (settings) => send("/enforcement", "POST", settings),
+  enforceProcess: (pid, comm) => send("/enforcement/action", "POST", { pid, comm }),
+  clearEnforcement: () => send("/enforcement/clear", "POST"),
+
+  iocs: () => req("/iocs"),
+  addIoc: (type, value, description) => send("/iocs", "POST", { type, value, description }),
+  deleteIoc: (id) => send(`/iocs/${id}`, "DELETE"),
+
+  users: () => req("/users"),
+  addUser: (username, password, role) => send("/users", "POST", { username, password, role }),
+  deleteUser: (name) => send(`/users/${encodeURIComponent(name)}`, "DELETE"),
+  setUserRole: (name, role) => send(`/users/${encodeURIComponent(name)}/role`, "POST", { role }),
+
+  apikeys: () => req("/apikeys"),
+  addApiKey: (name, role) => send("/apikeys", "POST", { name, role }),
+  deleteApiKey: (id) => send(`/apikeys/${id}`, "DELETE"),
+
+  alerting: () => req("/alerting"),
+  setAlerting: (settings) => send("/alerting", "POST", settings),
+  testAlerting: () => send("/alerting/test", "POST"),
 };
 
 export function usePoll(fn, intervalMs = 3000) {
