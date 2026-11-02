@@ -151,6 +151,40 @@ def _terminate_process(alert):
             + " seconds if it is still running")
 
 
+def _proc_comm(pid):
+    try:
+        with open("/proc/" + str(pid) + "/comm") as comm_file:
+            return comm_file.read().strip()
+    except (OSError, ValueError):
+        return None
+
+
+def manual_request(pid, comm=None, requested_by="unknown", terminate=None):
+    valid = isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+    real = _proc_comm(pid) if valid else None
+    name = real if real is not None else comm
+    rule = "manual by " + str(requested_by)
+
+    reason = protection_reason(pid, name)
+    if reason is not None:
+        return record_action(pid, name, rule, "manual", "guard_blocked", reason)
+
+    would = ("would have sent SIGTERM, then SIGKILL after "
+             + str(config.RESPONSE_GRACE_SECONDS) + " seconds if still running")
+    if not config.RESPONSE_ENABLED:
+        return record_action(pid, name, rule, "manual", "dry_run", "responder is off: " + would)
+    if config.RESPONSE_DRY_RUN:
+        return record_action(pid, name, rule, "manual", "dry_run", "dry-run is on: " + would)
+
+    kill = terminate or _terminate_process
+    try:
+        outcome = kill({"pid": pid, "comm": name, "rule": rule, "severity": "manual"})
+    except OSError as error:
+        return record_action(pid, name, rule, "manual", "guard_blocked",
+                             "the operating system refused: " + str(error))
+    return record_action(pid, name, rule, "manual", "executed", outcome)
+
+
 def respond(alert, terminate=None):
     if not config.RESPONSE_ENABLED:
         return None

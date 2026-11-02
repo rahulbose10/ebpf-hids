@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 import pytest
 
@@ -131,3 +132,57 @@ def test_log_is_bounded():
     kept = response.recent_actions(limit=config.RESPONSE_LOG_MAX)
     assert kept[0]["pid"] == total - 1
     assert kept[-1]["pid"] == 5
+
+
+
+@pytest.fixture
+def no_proc(monkeypatch):
+    monkeypatch.setattr(response, "_proc_comm", lambda pid: None)
+
+
+def test_manual_request_blocks_pid1_sshd_and_itself_with_defaults(no_proc, killer):
+    targets = [(1, "systemd"), (987650, "sshd"), (os.getpid(), "python")]
+    for pid, comm in targets:
+        entry = response.manual_request(pid, comm, "tester", killer)
+        assert entry["decision"] == "guard_blocked", f"pid {pid} ({comm}) was not blocked"
+        assert entry["reason"].startswith("guard:")
+        assert entry["rule"] == "manual by tester"
+    assert killer.calls == []
+    assert len(response.recent_actions()) == 3
+
+
+def test_manual_request_is_dry_run_unless_armed(no_proc, killer, monkeypatch):
+    entry = response.manual_request(987654, "evil", "tester", killer)
+    assert entry["decision"] == "dry_run"
+    assert "responder is off" in entry["reason"]
+
+    monkeypatch.setattr(config, "RESPONSE_ENABLED", True)
+    entry = response.manual_request(987654, "evil", "tester", killer)
+    assert entry["decision"] == "dry_run"
+    assert "dry-run is on" in entry["reason"]
+
+    monkeypatch.setattr(config, "RESPONSE_ENABLED", False)
+    monkeypatch.setattr(config, "RESPONSE_DRY_RUN", False)
+    entry = response.manual_request(987654, "evil", "tester", killer)
+    assert entry["decision"] == "dry_run"
+
+    assert killer.calls == []
+
+
+def test_manual_request_executes_only_when_armed(no_proc, live_mode, killer):
+    entry = response.manual_request(987654, "evil", "tester", killer)
+    assert entry["decision"] == "executed"
+    assert killer.calls == [987654]
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason="needs /proc")
+def test_manual_request_uses_the_real_name_not_the_given_one(killer):
+    child = subprocess.Popen(["sleep", "30"])
+    try:
+        entry = response.manual_request(child.pid, "not-sleep", "tester", killer)
+        assert entry["comm"] == "sleep"
+        assert entry["decision"] == "guard_blocked"
+    finally:
+        child.kill()
+        child.wait()
+    assert killer.calls == []

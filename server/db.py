@@ -1,12 +1,46 @@
 import json
 import sqlite3
+import threading
 import time
 
 from server import config
 
+POOL_SIZE = 8
+
+_pool_lock = threading.Lock()
+_idle = []
+_idle_path = None
+
+
+class PooledConnection(sqlite3.Connection):
+    def close(self):
+        if self.in_transaction:
+            self.rollback()
+        with _pool_lock:
+            if any(c is self for c in _idle):
+                return
+            if self.db_path == _idle_path and len(_idle) < POOL_SIZE:
+                _idle.append(self)
+                return
+        super().close()
+
 
 def get_connection():
-    conn = sqlite3.connect(config.DATABASE_PATH, timeout=10)
+    global _idle_path
+    path = str(config.DATABASE_PATH)
+    stale = []
+    with _pool_lock:
+        if path != _idle_path:
+            stale = list(_idle)
+            _idle.clear()
+            _idle_path = path
+        conn = _idle.pop() if _idle else None
+    for old_conn in stale:
+        sqlite3.Connection.close(old_conn)
+    if conn is not None:
+        return conn
+    conn = sqlite3.connect(path, timeout=10, factory=PooledConnection, check_same_thread=False)
+    conn.db_path = path
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
@@ -83,17 +117,7 @@ def init_db():
         )
     """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS anomaly_scores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pid INTEGER,
-            comm TEXT,
-            ts REAL NOT NULL,
-            iforest_score REAL,
-            recon_error REAL,
-            is_anomaly INTEGER NOT NULL DEFAULT 0
-        )
-    """)
+    cur.execute("DROP TABLE IF EXISTS anomaly_scores")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS iocs (
@@ -169,9 +193,22 @@ def count_users():
     return n
 
 
+KEEP_ONE_ADMIN = "(role != 'admin' OR (SELECT COUNT(*) FROM users WHERE role = 'admin') > 1)"
+
+
+def list_users():
+    conn = get_connection()
+    rows = conn.execute("SELECT username, role, created_at FROM users ORDER BY id").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def set_user_role(username, role):
     conn = get_connection()
-    changed = conn.execute("UPDATE users SET role = ? WHERE username = ?", (role, username)).rowcount > 0
+    changed = conn.execute(
+        "UPDATE users SET role = ? WHERE username = ? AND (? = 'admin' OR " + KEEP_ONE_ADMIN + ")",
+        (role, username, role)
+    ).rowcount > 0
     conn.commit()
     conn.close()
     return changed
@@ -179,7 +216,10 @@ def set_user_role(username, role):
 
 def delete_user(username):
     conn = get_connection()
-    deleted = conn.execute("DELETE FROM users WHERE username = ?", (username,)).rowcount > 0
+    deleted = conn.execute(
+        "DELETE FROM users WHERE username = ? AND " + KEEP_ONE_ADMIN,
+        (username,)
+    ).rowcount > 0
     conn.commit()
     conn.close()
     return deleted
@@ -253,21 +293,6 @@ def recent_alerts(limit=300):
     return alerts
 
 
-def recent_anomaly_scores(limit=300):
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM anomaly_scores ORDER BY id DESC LIMIT ?",
-        (limit,)
-    ).fetchall()
-    conn.close()
-    scores = []
-    for row in rows:
-        score = dict(row)
-        score["is_anomaly"] = bool(score["is_anomaly"])
-        scores.append(score)
-    return scores
-
-
 def counts():
     conn = get_connection()
     result = {
@@ -275,7 +300,6 @@ def counts():
         "processes": conn.execute("SELECT COUNT(DISTINCT pid) FROM events").fetchone()[0],
         "alerts": conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0],
         "incidents": conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0],
-        "anomalies": conn.execute("SELECT COUNT(*) FROM anomaly_scores WHERE is_anomaly = 1").fetchone()[0],
     }
     conn.close()
     return result
@@ -360,6 +384,62 @@ def set_incident_status(incident_id, new_status, changed_by, note=""):
     return True
 
 
+def export_alerts(limit):
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT id, ts, rule, technique, severity, confidence, pid, comm, summary, incident_id
+           FROM alerts ORDER BY id ASC LIMIT ?""",
+        (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def export_incidents(limit):
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM incidents ORDER BY id ASC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def report_numbers():
+    conn = get_connection()
+    by_severity = {
+        row["severity"]: row["n"]
+        for row in conn.execute("SELECT severity, COUNT(*) AS n FROM alerts GROUP BY severity")
+    }
+    top_rules = [
+        {"rule": row["rule"], "technique": row["technique"], "count": row["n"]}
+        for row in conn.execute(
+            """SELECT rule, technique, COUNT(*) AS n FROM alerts
+               GROUP BY rule, technique ORDER BY n DESC, rule ASC LIMIT 10"""
+        )
+    ]
+    by_status = {
+        row["status"]: row["n"]
+        for row in conn.execute("SELECT status, COUNT(*) AS n FROM incidents GROUP BY status")
+    }
+    conn.close()
+    return {"by_severity": by_severity, "top_rules": top_rules, "by_status": by_status}
+
+
+def insert_delivery(alert_id, channel, status, detail):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO alert_delivery_log (alert_id, channel, status, ts, detail) VALUES (?, ?, ?, ?, ?)",
+        (alert_id, channel, status, time.time(), detail)
+    )
+    conn.commit()
+    conn.close()
+
+
+def recent_deliveries(limit=50):
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM alert_delivery_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def incident_audit(incident_id):
     conn = get_connection()
     rows = conn.execute(
@@ -383,9 +463,29 @@ def technique_counts():
 
 def list_iocs():
     conn = get_connection()
-    rows = conn.execute("SELECT id, type, value, description FROM iocs ORDER BY id").fetchall()
+    rows = conn.execute("SELECT id, type, value, description, added_by, ts FROM iocs ORDER BY id").fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def insert_ioc(ioc_type, value, description, added_by):
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT INTO iocs (type, value, description, added_by, ts) VALUES (?, ?, ?, ?, ?)",
+        (ioc_type, value, description, added_by, time.time())
+    )
+    ioc_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return ioc_id
+
+
+def delete_ioc(ioc_id):
+    conn = get_connection()
+    deleted = conn.execute("DELETE FROM iocs WHERE id = ?", (ioc_id,)).rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def evaluation_numbers():
@@ -400,10 +500,6 @@ def evaluation_numbers():
     incident_count = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
     alerts_in_incidents = conn.execute(
         "SELECT COUNT(*) FROM alerts WHERE incident_id IS NOT NULL"
-    ).fetchone()[0]
-    anomaly_scores = conn.execute("SELECT COUNT(*) FROM anomaly_scores").fetchone()[0]
-    anomalies_flagged = conn.execute(
-        "SELECT COUNT(*) FROM anomaly_scores WHERE is_anomaly = 1"
     ).fetchone()[0]
     conn.close()
 
@@ -420,8 +516,6 @@ def evaluation_numbers():
         "by_technique": technique_counts(),
         "incidents": incident_count,
         "alerts_per_incident": alerts_per_incident,
-        "anomaly_scores": anomaly_scores,
-        "anomalies_flagged": anomalies_flagged,
     }
 def insert_api_key(name, role):
     conn = get_connection()

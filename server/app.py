@@ -1,19 +1,24 @@
 import argparse
 import atexit
+import ipaddress
+import json
 import os
+import re
 import secrets
+import sqlite3
 import subprocess
 import sys
 import threading
 from datetime import timedelta
+from urllib.parse import urlsplit
 
-from flask import Flask, request, send_from_directory
+from flask import Flask, Response, request, send_from_directory
 from werkzeug.security import safe_join
 
-from server import auth, config, db, mitre
-from server.engine import Engine
+from server import alerting, auth, config, db, mitre, navigator, reports, response
+from server.engine import MAX_DEPTH, Engine
 from server.incidents import TRANSITIONS, IncidentManager
-from server.ioc import IOCStore
+from server.ioc import IOC_TYPES, IOCStore
 from server.pipeline import Pipeline
 
 
@@ -39,6 +44,158 @@ def _seed_admin():
 def _limit(default):
     value = request.args.get("limit", default, type=int)
     return max(1, min(value, config.MAX_LIMIT))
+
+
+ENFORCEMENT_SETTINGS = ("enabled", "dry_run", "min_severity")
+
+HOST_RE = re.compile(r"[A-Za-z0-9.:-]{1,255}")
+
+
+def _check_alerting(data):
+    checks = {
+        "enabled": lambda v: isinstance(v, bool),
+        "syslog_enabled": lambda v: isinstance(v, bool),
+        "min_severity": lambda v: v in alerting.SEVERITY_ORDER,
+        "throttle_seconds": lambda v: isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 86400,
+        "syslog_port": lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 65535,
+        "syslog_host": lambda v: isinstance(v, str) and HOST_RE.fullmatch(v) is not None,
+        "webhook_url": lambda v: isinstance(v, str) and (v == "" or _good_url(v)),
+    }
+    if not isinstance(data, dict) or not data:
+        return "send at least one of: " + ", ".join(sorted(checks))
+    unknown = sorted(set(data) - set(checks))
+    if unknown:
+        return "unknown setting: " + ", ".join(unknown)
+    for key, check in checks.items():
+        if key in data and not check(data[key]):
+            return "bad value for " + key
+    return None
+
+
+def _good_url(url):
+    if len(url) > 500 or any(ch.isspace() for ch in url):
+        return False
+    parts = urlsplit(url)
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
+ALERTING_KEYS = {
+    "enabled": "ALERT_ENABLED",
+    "min_severity": "ALERT_MIN_SEVERITY",
+    "throttle_seconds": "ALERT_THROTTLE_SECONDS",
+    "webhook_url": "ALERT_WEBHOOK_URL",
+    "syslog_enabled": "ALERT_SYSLOG_ENABLED",
+    "syslog_host": "ALERT_SYSLOG_HOST",
+    "syslog_port": "ALERT_SYSLOG_PORT",
+}
+
+
+def _alerting_state(notifier):
+    state = {key: getattr(config, name) for key, name in ALERTING_KEYS.items()}
+    with notifier.lock:
+        stats = dict(notifier.stats)
+    state.update({
+        "webhook_timeout": config.ALERT_WEBHOOK_TIMEOUT,
+        "severities": list(alerting.SEVERITY_ORDER),
+        "channels": notifier.channels(),
+        "stats": stats,
+        "deliveries": db.recent_deliveries(50),
+        "note": "changes made here last until the server restarts",
+    })
+    return state
+
+
+def _process_chain(engine, pid):
+    with engine.lock:
+        if pid not in engine.processes:
+            return None
+        return [engine.processes[p].to_dict(engine.depth(p)) for p in engine.lineage(pid)]
+
+
+def _process_tree(engine, root):
+    with engine.lock:
+        if root not in engine.processes:
+            return None
+        children = {}
+        for state in engine.processes.values():
+            children.setdefault(state.ppid, []).append(state.pid)
+        seen = {root}
+        count = 1
+        truncated = False
+
+        def build(pid, level):
+            nonlocal count, truncated
+            node = {"process": engine.processes[pid].to_dict(engine.depth(pid)), "children": []}
+            if level >= MAX_DEPTH:
+                truncated = truncated or bool(children.get(pid))
+                return node
+            for child in sorted(children.get(pid, [])):
+                if child in seen:
+                    continue
+                if count >= config.TREE_MAX_NODES:
+                    truncated = True
+                    break
+                seen.add(child)
+                count += 1
+                node["children"].append(build(child, level + 1))
+            return node
+
+        tree = build(root, 0)
+    return {"root": root, "nodes": count, "truncated": truncated, "tree": tree}
+
+
+REPORT_PAGE_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _csv_reply(text, filename):
+    return Response(text, mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+HASH_RE = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
+USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,32}")
+
+
+def _check_ioc(ioc_type, value):
+    if ioc_type not in IOC_TYPES:
+        return None, "type must be one of: " + ", ".join(IOC_TYPES)
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > 512:
+        return None, "value is required (1 to 512 characters)"
+    value = value.strip()
+    wildcard = any(ch in value for ch in "*?[")
+    if ioc_type == "ip" and not wildcard:
+        try:
+            value = str(ipaddress.ip_address(value))
+        except ValueError:
+            return None, "value is not an IP address (use * for a pattern, like 10.0.0.*)"
+    if ioc_type == "path" and not value.startswith(("/", "*")):
+        return None, "a path must start with / or with * for a pattern"
+    if ioc_type == "hash":
+        value = value.lower()
+        if not HASH_RE.fullmatch(value):
+            return None, "a hash must be md5, sha1 or sha256 in hex"
+    return value, None
+
+
+def _enforcement_state():
+    actions = response.recent_actions(config.RESPONSE_LOG_MAX)
+    counts = {decision: 0 for decision in response.DECISIONS}
+    for item in actions:
+        counts[item["decision"]] += 1
+    return {
+        "enabled": config.RESPONSE_ENABLED,
+        "dry_run": config.RESPONSE_DRY_RUN,
+        "min_severity": config.RESPONSE_MIN_SEVERITY,
+        "severities": list(response.SEVERITY_ORDER),
+        "grace_seconds": config.RESPONSE_GRACE_SECONDS,
+        "min_safe_pid": config.MIN_SAFE_PID,
+        "never_kill": sorted(config.NEVER_KILL),
+        "note": "changes made here last until the server restarts, then it is off and in dry-run again",
+        "counts": counts,
+        "actions": actions[:_limit(100)],
+    }
 
 
 def _load_iocs():
@@ -90,8 +247,10 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
     for problem in engine.rule_errors:
         print(f"rule problem: {problem}", file=sys.stderr)
     incidents = IncidentManager(next_id=db.max_incident_id() + 1)
-    pipeline = Pipeline(engine, incidents, _load_iocs())
-    app.extensions["hids"] = {"engine": engine, "incidents": incidents, "pipeline": pipeline}
+    notifier = alerting.Notifier()
+    pipeline = Pipeline(engine, incidents, _load_iocs(), notifier=notifier)
+    app.extensions["hids"] = {"engine": engine, "incidents": incidents, "pipeline": pipeline,
+                              "notifier": notifier}
 
     @app.route("/api/login", methods=["POST"])
     def login():
@@ -260,6 +419,244 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/lineage/<int:pid>")
+    @auth.login_required
+    def lineage(pid):
+        chain = _process_chain(engine, pid)
+        if chain is None:
+            return {"error": "unknown process"}, 404
+        return {"pid": pid, "chain": chain}
+
+    @app.route("/api/tree/<int:root>")
+    @auth.login_required
+    def process_tree(root):
+        result = _process_tree(engine, root)
+        if result is None:
+            return {"error": "unknown process"}, 404
+        return result
+
+    @app.route("/api/alerting")
+    @auth.require_role("admin")
+    def alerting_get():
+        return _alerting_state(notifier)
+
+    @app.route("/api/alerting", methods=["POST"])
+    @auth.require_role("admin")
+    def alerting_set():
+        data = request.get_json(silent=True)
+        problem = _check_alerting(data)
+        if problem:
+            return {"error": problem}, 400
+        for key, value in data.items():
+            setattr(config, ALERTING_KEYS[key], value)
+        print(f"alerting: {auth.current_user()['username']} changed {', '.join(sorted(data))}", file=sys.stderr)
+        return _alerting_state(notifier)
+
+    @app.route("/api/alerting/test", methods=["POST"])
+    @auth.require_role("admin")
+    def alerting_test():
+        if not notifier.channels():
+            return {"error": "no channel is configured, set webhook_url or syslog_enabled first"}, 400
+        body = alerting.payload({
+            "rule": "alerting_test", "technique": None, "severity": "low", "confidence": None,
+            "pid": None, "comm": None, "summary": "test notification from eBPF-HIDS",
+            "ts": None, "incident_id": None,
+        })
+        return {"results": notifier.deliver(body)}
+
+    @app.route("/api/reports/summary")
+    @auth.login_required
+    def report_summary():
+        return reports.summary(
+            db.counts(), db.report_numbers(), list(TRANSITIONS), db.technique_counts(),
+            pipeline.stats["ml_scored"], pipeline.stats["ml_flagged"],
+        )
+
+    @app.route("/api/reports/alerts.csv")
+    @auth.login_required
+    def report_alerts_csv():
+        rows = db.export_alerts(config.REPORT_MAX_ROWS)
+        return _csv_reply(reports.to_csv(rows, reports.ALERT_COLUMNS), "alerts.csv")
+
+    @app.route("/api/reports/incidents.csv")
+    @auth.login_required
+    def report_incidents_csv():
+        rows = db.export_incidents(config.REPORT_MAX_ROWS)
+        return _csv_reply(reports.to_csv(rows, reports.INCIDENT_COLUMNS), "incidents.csv")
+
+    @app.route("/api/reports/incident/<int:incident_id>.html")
+    @auth.login_required
+    def report_incident(incident_id):
+        incident = db.get_incident(incident_id)
+        if incident is None:
+            return {"error": "unknown incident"}, 404
+        page = reports.incident_html(incident, db.incident_audit(incident_id))
+        return Response(page, mimetype="text/html", headers=REPORT_PAGE_HEADERS)
+
+    @app.route("/api/navigator")
+    @auth.login_required
+    def navigator_layer():
+        return navigator.build_layer(db.technique_counts())
+
+    @app.route("/api/navigator/download")
+    @auth.login_required
+    def navigator_download():
+        layer = navigator.build_layer(db.technique_counts())
+        return Response(
+            json.dumps(layer, indent=2),
+            mimetype="application/json",
+            headers={"Content-Disposition": 'attachment; filename="ebpf-hids-layer.json"'},
+        )
+
+    @app.route("/api/users")
+    @auth.require_role("admin")
+    def users_list():
+        return {"users": db.list_users(), "roles": list(auth.ROLES)}
+
+    @app.route("/api/users", methods=["POST"])
+    @auth.require_role("admin")
+    def users_create():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        username = data.get("username")
+        password = data.get("password")
+        role = data.get("role", "viewer")
+        if not isinstance(username, str) or not USERNAME_RE.fullmatch(username):
+            return {"error": "username must be 1 to 32 letters, digits, dots, dashes or underscores"}, 400
+        if not isinstance(password, str) or not 8 <= len(password) <= 128:
+            return {"error": "password must be 8 to 128 characters"}, 400
+        if role not in auth.ROLES:
+            return {"error": "role must be one of: " + ", ".join(auth.ROLES)}, 400
+        if db.get_user(username) is not None:
+            return {"error": "that username is taken"}, 409
+        try:
+            auth.create_user(username, password, role)
+        except sqlite3.IntegrityError:
+            return {"error": "that username is taken"}, 409
+        print(f"users: {auth.current_user()['username']} created {username} as {role}", file=sys.stderr)
+        return {"username": username, "role": role}, 201
+
+    @app.route("/api/users/<username>", methods=["DELETE"])
+    @auth.require_role("admin")
+    def users_delete(username):
+        who = auth.current_user()["username"]
+        if db.get_user(username) is None:
+            return {"error": "unknown user"}, 404
+        if username == who:
+            return {"error": "you cannot delete your own account"}, 409
+        if not db.delete_user(username):
+            return {"error": "that is the last admin, keep at least one"}, 409
+        print(f"users: {who} deleted {username}", file=sys.stderr)
+        return {"deleted": username}
+
+    @app.route("/api/users/<username>/role", methods=["POST"])
+    @auth.require_role("admin")
+    def users_role(username):
+        who = auth.current_user()["username"]
+        data = request.get_json(silent=True)
+        role = data.get("role") if isinstance(data, dict) else None
+        if role not in auth.ROLES:
+            return {"error": "role must be one of: " + ", ".join(auth.ROLES)}, 400
+        if db.get_user(username) is None:
+            return {"error": "unknown user"}, 404
+        if username == who:
+            return {"error": "you cannot change your own role"}, 409
+        if not db.set_user_role(username, role):
+            return {"error": "that is the last admin, keep at least one"}, 409
+        print(f"users: {who} set {username} to {role}", file=sys.stderr)
+        return {"username": username, "role": role}
+
+    @app.route("/api/iocs")
+    @auth.login_required
+    def iocs_list():
+        return {
+            "iocs": db.list_iocs(),
+            "types": list(IOC_TYPES),
+            "note": "an indicator enriches alerts that rules raise after it was added, it does not raise an alert on its own",
+        }
+
+    @app.route("/api/iocs", methods=["POST"])
+    @auth.require_role("analyst")
+    def iocs_add():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        ioc_type = data.get("type")
+        value, problem = _check_ioc(ioc_type, data.get("value"))
+        if problem:
+            return {"error": problem}, 400
+        description = data.get("description") or ""
+        if not isinstance(description, str) or len(description) > 200:
+            return {"error": "description must be text of at most 200 characters"}, 400
+        if any(row["type"] == ioc_type and row["value"] == value for row in db.list_iocs()):
+            return {"error": "that indicator already exists"}, 409
+        who = auth.current_user()["username"]
+        ioc_id = db.insert_ioc(ioc_type, value, description.strip(), who)
+        with engine.lock:
+            pipeline.iocs.add(ioc_type, value, description.strip(), ioc_id=ioc_id)
+        return {"id": ioc_id, "type": ioc_type, "value": value,
+                "description": description.strip(), "added_by": who}, 201
+
+    @app.route("/api/iocs/<int:ioc_id>", methods=["DELETE"])
+    @auth.require_role("analyst")
+    def iocs_delete(ioc_id):
+        if not db.delete_ioc(ioc_id):
+            return {"error": "unknown indicator"}, 404
+        with engine.lock:
+            pipeline.iocs.remove(ioc_id)
+        return {"deleted": ioc_id}
+
+    @app.route("/api/enforcement")
+    @auth.login_required
+    def enforcement():
+        return _enforcement_state()
+
+    @app.route("/api/enforcement", methods=["POST"])
+    @auth.require_role("admin")
+    def enforcement_settings():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data:
+            return {"error": "send at least one of: " + ", ".join(ENFORCEMENT_SETTINGS)}, 400
+        unknown = sorted(set(data) - set(ENFORCEMENT_SETTINGS))
+        if unknown:
+            return {"error": "unknown setting: " + ", ".join(unknown)}, 400
+        for key in ("enabled", "dry_run"):
+            if key in data and not isinstance(data[key], bool):
+                return {"error": key + " must be true or false"}, 400
+        if "min_severity" in data and data["min_severity"] not in response.SEVERITY_ORDER:
+            return {"error": "min_severity must be one of: " + ", ".join(response.SEVERITY_ORDER)}, 400
+        if "enabled" in data:
+            config.RESPONSE_ENABLED = data["enabled"]
+        if "dry_run" in data:
+            config.RESPONSE_DRY_RUN = data["dry_run"]
+        if "min_severity" in data:
+            config.RESPONSE_MIN_SEVERITY = data["min_severity"]
+        changes = ", ".join(f"{key}={data[key]}" for key in sorted(data))
+        print(f"enforcement: {auth.current_user()['username']} set {changes}", file=sys.stderr)
+        return _enforcement_state()
+
+    @app.route("/api/enforcement/action", methods=["POST"])
+    @auth.require_role("analyst")
+    def enforcement_action():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        pid = data.get("pid")
+        comm = data.get("comm")
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+            return {"error": "pid must be a positive whole number"}, 400
+        if comm is not None and (not isinstance(comm, str) or len(comm) > 64):
+            return {"error": "comm must be text of at most 64 characters"}, 400
+        return response.manual_request(pid, comm, auth.current_user()["username"])
+
+    @app.route("/api/enforcement/clear", methods=["POST"])
+    @auth.require_role("admin")
+    def enforcement_clear():
+        cleared = response.clear_actions()
+        print(f"enforcement: {auth.current_user()['username']} cleared {cleared} log entries", file=sys.stderr)
+        return {"cleared": cleared}
 
     if config.CONSOLE_DIST.is_dir():
         @app.route("/", defaults={"path": ""})
