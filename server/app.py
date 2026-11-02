@@ -1,6 +1,8 @@
 import argparse
 import atexit
+import ipaddress
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -13,7 +15,7 @@ from werkzeug.security import safe_join
 from server import auth, config, db, mitre, response
 from server.engine import Engine
 from server.incidents import TRANSITIONS, IncidentManager
-from server.ioc import IOCStore
+from server.ioc import IOC_TYPES, IOCStore
 from server.pipeline import Pipeline
 
 
@@ -42,6 +44,29 @@ def _limit(default):
 
 
 ENFORCEMENT_SETTINGS = ("enabled", "dry_run", "min_severity")
+
+HASH_RE = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
+
+
+def _check_ioc(ioc_type, value):
+    if ioc_type not in IOC_TYPES:
+        return None, "type must be one of: " + ", ".join(IOC_TYPES)
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > 512:
+        return None, "value is required (1 to 512 characters)"
+    value = value.strip()
+    wildcard = any(ch in value for ch in "*?[")
+    if ioc_type == "ip" and not wildcard:
+        try:
+            value = str(ipaddress.ip_address(value))
+        except ValueError:
+            return None, "value is not an IP address (use * for a pattern, like 10.0.0.*)"
+    if ioc_type == "path" and not value.startswith(("/", "*")):
+        return None, "a path must start with / or with * for a pattern"
+    if ioc_type == "hash":
+        value = value.lower()
+        if not HASH_RE.fullmatch(value):
+            return None, "a hash must be md5, sha1 or sha256 in hex"
+    return value, None
 
 
 def _enforcement_state():
@@ -282,6 +307,46 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/iocs")
+    @auth.login_required
+    def iocs_list():
+        return {
+            "iocs": db.list_iocs(),
+            "types": list(IOC_TYPES),
+            "note": "an indicator enriches alerts that rules raise after it was added, it does not raise an alert on its own",
+        }
+
+    @app.route("/api/iocs", methods=["POST"])
+    @auth.require_role("analyst")
+    def iocs_add():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        ioc_type = data.get("type")
+        value, problem = _check_ioc(ioc_type, data.get("value"))
+        if problem:
+            return {"error": problem}, 400
+        description = data.get("description") or ""
+        if not isinstance(description, str) or len(description) > 200:
+            return {"error": "description must be text of at most 200 characters"}, 400
+        if any(row["type"] == ioc_type and row["value"] == value for row in db.list_iocs()):
+            return {"error": "that indicator already exists"}, 409
+        who = auth.current_user()["username"]
+        ioc_id = db.insert_ioc(ioc_type, value, description.strip(), who)
+        with engine.lock:
+            pipeline.iocs.add(ioc_type, value, description.strip(), ioc_id=ioc_id)
+        return {"id": ioc_id, "type": ioc_type, "value": value,
+                "description": description.strip(), "added_by": who}, 201
+
+    @app.route("/api/iocs/<int:ioc_id>", methods=["DELETE"])
+    @auth.require_role("analyst")
+    def iocs_delete(ioc_id):
+        if not db.delete_ioc(ioc_id):
+            return {"error": "unknown indicator"}, 404
+        with engine.lock:
+            pipeline.iocs.remove(ioc_id)
+        return {"deleted": ioc_id}
 
     @app.route("/api/enforcement")
     @auth.login_required

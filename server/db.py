@@ -391,9 +391,29 @@ def technique_counts():
 
 def list_iocs():
     conn = get_connection()
-    rows = conn.execute("SELECT id, type, value, description FROM iocs ORDER BY id").fetchall()
+    rows = conn.execute("SELECT id, type, value, description, added_by, ts FROM iocs ORDER BY id").fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def insert_ioc(ioc_type, value, description, added_by):
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT INTO iocs (type, value, description, added_by, ts) VALUES (?, ?, ?, ?, ?)",
+        (ioc_type, value, description, added_by, time.time())
+    )
+    ioc_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return ioc_id
+
+
+def delete_ioc(ioc_id):
+    conn = get_connection()
+    deleted = conn.execute("DELETE FROM iocs WHERE id = ?", (ioc_id,)).rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def evaluation_numbers():
