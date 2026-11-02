@@ -1,12 +1,44 @@
 import json
 import sqlite3
+import threading
 import time
 
 from server import config
 
+POOL_SIZE = 8
+
+_pool_lock = threading.Lock()
+_idle = []
+_idle_path = None
+
+
+class PooledConnection(sqlite3.Connection):
+    def close(self):
+        if self.in_transaction:
+            self.rollback()
+        with _pool_lock:
+            if self.db_path == _idle_path and len(_idle) < POOL_SIZE and self not in _idle:
+                _idle.append(self)
+                return
+        super().close()
+
 
 def get_connection():
-    conn = sqlite3.connect(config.DATABASE_PATH, timeout=10)
+    global _idle_path
+    path = str(config.DATABASE_PATH)
+    stale = []
+    with _pool_lock:
+        if path != _idle_path:
+            stale = list(_idle)
+            _idle.clear()
+            _idle_path = path
+        conn = _idle.pop() if _idle else None
+    for old_conn in stale:
+        sqlite3.Connection.close(old_conn)
+    if conn is not None:
+        return conn
+    conn = sqlite3.connect(path, timeout=10, factory=PooledConnection, check_same_thread=False)
+    conn.db_path = path
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
