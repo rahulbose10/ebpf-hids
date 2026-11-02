@@ -122,13 +122,111 @@ Summary of the three idle runs, all with no attack sims:
     run 2, about 15 min, first tuning:    5794 events,  2 alerts
     run 3, 30 min, second tuning:         7115 events,  0 alerts
 
+## Session of 2026-11-02, after L1 session 6
+
+L1 session 6 changed the sensor under us: a READ event for read-only opens of /etc/shadow, /etc/gshadow, /etc/sudoers and SSH private keys, absolute paths for OPEN, UNLINK, RENAME and CHMOD, RENAME sides up to 511 characters, and EXEC only when the exec succeeded. Everything below was measured on the same VM that day. Start of session: 216 tests passed, samples replay 160 events and 3 alerts.
+
+### Who reads the watched files
+
+Short probe: `sudo true`, `sudo cat /etc/shadow`, `sudo cat /etc/sudoers`, and a plain `cat /etc/shadow` as uid 1000. The loader reported 3 watched paths (shadow, gshadow, sudoers). The VM has no SSH private keys, so key reads were not tested.
+
+sudo reads /etc/sudoers and /etc/shadow on every run from the sudo process itself, once under uid 0 and once under uid 1000. `sudo cat /etc/shadow` makes its own READ with comm cat and uid 0, and its parent is a sudo child, not the shell. A plain `cat /etc/shadow` that gets Permission denied still produces a READ.
+
+That is why credential_access skips sudo by exec path (/usr/bin/sudo) and not by comm, uid or parent.
+
+### First idle run (12:24 to 13:20, cron.hourly at 13:17:01 inside)
+
+Normal use: sudo apt update, sudo true, `su -c true` failing on purpose, screen lock and unlock, Firefox, LibreOffice, curl, wget, ping, git, pytest. 7337 events, 0 dropped, 16 of them READ.
+
+    replay with credential_access on READ, before exclusions: 9 alerts
+          5 credential_access   gdm-session-worker x2 (unlock), cron x2 (every job launch), su x1
+          1 log_tampering       su writing /var/log/btmp after the failed login
+          1 connect_after_exec  whoopsie connecting to Canonical right after systemd started it
+          2 code_injection_rwx  LibreOffice soffice.bin asking for rwx memory
+
+Exclusions added for exactly those, on the full exec path so a copy in /tmp still alerts: /usr/bin/su, /usr/libexec/gdm-session-worker and cron for credential_access, /usr/bin/su for log_tampering, /usr/bin/whoopsie for connect_after_exec, /usr/lib/libreoffice/program/soffice.bin for code_injection_rwx. cron's job processes are forks that never exec, so they have no exec path. cron is matched on exe_path, which is the exec path when there is one and comm when there is not.
+
+After the exclusions the same recording replays at 0 alerts. That only shows the exclusions remove what they were written for, because they were written from this file.
+
+READ no longer counts as a distinct event type for ML feature 0. In this recording 8 of 537 processes (sudo, su, cron, gdm-session-worker) had feature 0 raised by exactly 1 only because of READ, and L3 trained without READ.
+
+### rm -rf against ransomware_burst
+
+Recorded live in /tmp/lab13:
+
+    process                         unlinks  renames  file writes  counted  alert before
+    rm, 10 files                         11        0            0       11  none
+    rm, 30 files                         31        0            0       31  critical
+    rm, 60 files                         61        0            0       61  critical
+    python, write x.enc, delete x        30        0           30       30  critical
+    rm, cleanup of 30 .enc files         32        0            0       32  critical
+
+A cleanup only deletes, an encryptor writes. Unlinks now count toward the burst only for a process that has opened a file for writing. Renames count as before. Replay after the change: 1 alert, on the python process.
+
+### node compile cache
+
+npm with NODE_COMPILE_CACHE=/tmp/node-compile-cache wrote 545 cache files, each a temp file opened and then renamed into place (545 OPEN, 545 RENAME). That raised ransomware_burst on two node processes and code_injection_rwx on three, the second from V8 asking for rwx memory. /tmp/node-compile-cache/ is now routine churn, and node under /usr/bin, /usr/local/bin and ~/.nvm is excluded from code_injection_rwx. Replay of that recording: 5 alerts before, 0 after.
+
+### All 14 rules on the live sensor
+
+Live pipeline `sudo ./loader/loader | tee | python -m server.ingest`, rules only, harmless triggers on loopback and in /tmp, plus two empty files in /var/log and /etc deleted right after. The commands are in docs/live-triggers.md.
+
+    ingest: 2261 events, 18 alerts, 0 bad lines, 0 engine errors, 0 dropped
+
+    connect_after_exec         1
+    network_parent_shell       1
+    ptrace_then_exec           2
+    suid_shell                 0
+    ransomware_burst           1
+    log_tampering              2
+    persistence_autostart      1
+    credential_access          1
+    suid_backdoor              2
+    world_writable_sensitive   1
+    code_injection_rwx         2
+    kernel_module_load         2
+    backdoor_listener          1
+    download_and_execute       1
+
+The doubles are not extra detections: the ptrace, mprotect and modprobe triggers were run twice after a broken paste, log_tampering matched both the touch and the rm, and suid_backdoor matched chmod 4755 on two files.
+
+suid_shell missed. The launcher was a setuid root binary calling setuid(0) and then execl("/bin/sh", ...). The sensor saw SETUID old_uid=1000 new_uid=0 and then an EXEC, but the EXEC detail was empty, so the process still looked like su_launch and not a shell. The same launcher with "/bin/sh" copied into a stack buffer first reported /bin/sh, and suid_shell fired (separate run, 130 events, 2 alerts: suid_shell and suid_backdoor). The only difference is where the string lives. A literal in a page the program never touched cannot be read by the sensor at exec time. Reported to L1. Empty exec paths: 1 of 528 EXEC in the first idle run (snap-confine), 1 of 133 in the attack run.
+
+So all 14 rules have fired on real sensor events, suid_shell only with the stack buffer launcher.
+
+An EXEC with an empty path now clears the remembered exe. Before, the process kept the previous program's path, so an excluded program would pass its exclusion on to whatever it ran.
+
+### Fresh idle run after all changes (14:52:31 to about 15:20, cron.hourly at 15:17:01 inside)
+
+Nothing in this recording was used to write a rule. Repeated on purpose: sudo true, `su -c true`, rm -rf of a 40 file folder, npm with the node cache and then rm -rf of its 545 files, sudo apt update, screen lock and unlock, LibreOffice opened twice, Firefox (snap). Thunderbird and whoopsie did not start, so those two exclusions were not rechecked here.
+
+    ingest: 3365 events, 0 alerts, 0 bad lines, 0 engine errors
+
+One machine, one user, about 28 minutes. 0 is what we measured, not a promise.
+
+### Other checks
+
+measure_rules.py after all changes: 282 events, 14 alerts, precision 1.000, 14 of 14 scenarios, 0 of 30 benign pids. Test suite: 247 passed. samples/events.jsonl replay unchanged at 160 events and 3 alerts. It has no READ lines yet.
+
+IPS BLOCK lines from ips_enforce are a separate stream. Fed to server.ingest they are skipped as bad lines (missing ppid, uid, type) and nothing crashes. server/pipeline.py uses the same normalise check. L2 does not turn them into alerts.
+
+Long RENAME detail: db.py stores detail as TEXT and nothing in server/ cuts it, the console only shortens it on screen with CSS. Checked by reading the code, not tested end to end with a 1026 character RENAME.
+
 ## Known blind spots
 
-credential_access can only see write-intent opens of /etc/shadow, because the sensor reports OPEN for writes only. Reading /etc/shadow, which is what credential dumping actually does, produces no event at all.
+credential_access sees the path as the caller typed it. `cd /etc && cat shadow` reports `shadow`, which the rule does not match. Not tested live.
 
-Paths from unlinkat, renameat and fchmodat can be relative (for example `cd /var/log && rm auth.log` arrives as `auth.log`), so the path-anchored rules miss them.
+SSH private keys are only watched if they exist when the loader starts. None exist on the VM, so key reads are untested.
 
-`rm -rf` of a folder holding 25 or more files inside 5 seconds raises ransomware_burst at critical severity. Nothing in the rule tells a cleanup from an encryptor except which paths are involved.
+READ and EXEC detail are still the path as typed. OPEN, UNLINK, RENAME and CHMOD are absolute now.
+
+A pure rm wiper no longer raises ransomware_burst. A script that writes one file and then deletes 25 more inside 5 seconds still does. Ransomware working inside a routine churn folder (package caches, browser and mail profiles, ~/.cache, /tmp/node-compile-cache) is not counted.
+
+Each exclusion by exec path is a hole for that one program: shellcode injected into LibreOffice or node is not seen by code_injection_rwx, and a replaced /usr/bin/whoopsie is not seen by connect_after_exec. Replacing a binary under /usr needs root.
+
+A process that sets its own comm to cron with no EXEC event can read /etc/shadow without an alert. A gdm-session-worker started before the sensor has no exec path and would alert.
+
+suid_shell misses a launcher whose shell path the sensor cannot read (empty EXEC detail). Needs the L1 fix.
 
 Processes that started before the sensor have no EXEC event, so their exe_name falls back to comm, which can be a thread name.
 
