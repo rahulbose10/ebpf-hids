@@ -359,3 +359,10 @@ The 31 July 2026 dates on this entry and the three after it are the original aut
 - All 14 rules fired on the live sensor: 13 in one run (2261 events, 18 alerts), suid_shell with a launcher that copies the path to the stack first. Commands in docs/live-triggers.md.
 - Fresh idle run after all changes, 14:52 to 15:20 with cron.hourly inside: 3365 events, 0 alerts. 247 tests pass, measure_rules 14 of 14 and 0 of 30 benign, samples replay still 160 events and 3 alerts.
 - Still open: suid_shell misses the string literal launcher until L1 fixes the EXEC path. credential_access matches the path as typed, so a relative read like cd /etc && cat shadow is missed, not tested live. Thunderbird and whoopsie exclusions not rechecked on fresh data. IPS BLOCK lines are skipped as bad lines. samples/events.jsonl has no READ until the final re-capture.
+
+## 2026-11-02 - L1 kernel sensor, three limits found by L2
+- EXEC with an empty detail: when the page holding the exec path was not loaded yet, the read at sys_enter failed. A handler on sched/sched_process_exec now fills an empty path from the kernel's own copy. Test program with the path alone in an untouched 64 KB block: 5 of 5 EXEC empty before, 0 of 5 after. Normal execs keep the path as typed.
+- Relative READ: a read-only open with a relative path is resolved with abs_path before the lookup. cd /etc && cat shadow: READ from cat 1 before (only the absolute command), 2 after. cat ./shadow is still missed because . is not normalized.
+- SSH keys created after start: the loader now re-reads the sensitive list every 10 seconds. A key created after start and read 12 seconds later: 0 READ before, 1 after. The .pub file is still skipped.
+- 247 tests passed after each fix, 0 build warnings, full system runs with 0 bad lines and 0 engine errors and 0 dropped events. One live run with the relative cat shadow raised 1 alert, which rule was not checked.
+- Still open: a key read within 10 seconds of being created is missed. ./ and ../ forms of a sensitive path are missed. samples/events.jsonl still predates all of today's sensor changes.
