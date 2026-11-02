@@ -3,7 +3,7 @@ from fnmatch import fnmatchcase
 from server.features import rename_paths, split_addr
 
 IOC_TYPES = ("ip", "path", "hash")
-PATH_EVENTS = ("OPEN", "UNLINK", "EXEC")
+PATH_EVENTS = ("OPEN", "READ", "UNLINK", "EXEC")
 
 
 def _event_ips(evt):

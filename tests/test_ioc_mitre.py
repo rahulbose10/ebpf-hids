@@ -31,6 +31,13 @@ def test_path_patterns_cover_rename_chmod_and_correlated():
     assert not store.match_event({"type": "OPEN", "detail": "/home/u/x.sh"})
 
 
+def test_read_event_path_is_matched():
+    store = IOCStore()
+    store.add("path", "/etc/shadow")
+    alert = store.enrich(alert_for("READ", "/etc/shadow"))
+    assert alert["detail"]["ioc"][0]["pattern"] == "/etc/shadow"
+
+
 def test_matching_is_case_sensitive_on_every_os():
     store = IOCStore()
     store.add("path", "/tmp/*.sh")
