@@ -17,7 +17,9 @@ class PooledConnection(sqlite3.Connection):
         if self.in_transaction:
             self.rollback()
         with _pool_lock:
-            if self.db_path == _idle_path and len(_idle) < POOL_SIZE and self not in _idle:
+            if any(c is self for c in _idle):
+                return
+            if self.db_path == _idle_path and len(_idle) < POOL_SIZE:
                 _idle.append(self)
                 return
         super().close()
