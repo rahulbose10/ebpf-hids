@@ -13,9 +13,7 @@ const SEVERITIES = [
   { id: "low", bar: "bg-low" },
 ];
 
-// The ML detector tags its alerts with this rule id. Evaluation.jsx uses the
-// same convention, so the two pages agree.
-const ML_RULE = "ML-ANOM";
+const ML_TECHNIQUE = "ML-ANOM";
 
 function BarRow({ label, count, max, bar }) {
   const width = max > 0 ? `${Math.max((count / max) * 100, count > 0 ? 2 : 0)}%` : "0%";
@@ -77,7 +75,7 @@ export default function Analytics() {
       const level = String(alert.severity || "low").toLowerCase();
       if (level in bySeverity) bySeverity[level] += 1;
 
-      if (alert.rule === ML_RULE) {
+      if (alert.technique === ML_TECHNIQUE) {
         ml += 1;
       } else if (alert.technique) {
         byTechnique.set(alert.technique, (byTechnique.get(alert.technique) || 0) + 1);
@@ -141,7 +139,7 @@ export default function Analytics() {
             { label: "ml alerts", count: stats.ml, bar: "bg-ml" },
           ]}
           bar="bg-signal"
-          note={`ML alerts are the ones with rule id ${ML_RULE}.`}
+          note={`ML alerts are the ones with technique ${ML_TECHNIQUE}.`}
         />
 
         <Breakdown

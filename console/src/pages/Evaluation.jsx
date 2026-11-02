@@ -3,10 +3,6 @@ import { api, usePoll } from "../api";
 import StatCard from "../components/StatCard";
 import { formatKts } from "../format";
 
-// The ML detector tags its alerts with this rule id. Analytics.jsx uses the
-// same convention, so the two pages agree.
-const ML_RULE = "ML-ANOM";
-
 function Bar({ label, count, max, bar }) {
   const width = max > 0 ? `${Math.max((count / max) * 100, count > 0 ? 2 : 0)}%` : "0%";
 
@@ -23,9 +19,6 @@ function Bar({ label, count, max, bar }) {
   );
 }
 
-// Share of the returned scores that the model flagged. Both numbers come from
-// the same list, so the share can never pass 100%. anomaly_count from the API
-// is a separate figure and is shown as text, not used for the ring.
 function FlagRing({ flagged, total }) {
   const percent = total > 0 ? (flagged / total) * 100 : 0;
 
@@ -47,6 +40,15 @@ function FlagRing({ flagged, total }) {
       </div>
     </div>
   );
+}
+
+function checksFired(row) {
+  const fired = [];
+  if (row.iforest_anomaly) fired.push("forest");
+  if (row.ae_anomaly) fired.push("autoencoder");
+  if (row.limit_anomaly) fired.push("limit");
+  if (fired.length === 0 && row.is_anomaly) fired.push("model");
+  return fired.join(", ");
 }
 
 function formatNumber(value) {
@@ -92,46 +94,42 @@ function describeMl(mlReady, mlAlerting) {
 }
 
 export default function Evaluation() {
-  const healthPoll = usePoll(api.health, 3000);
-  const alertsPoll = usePoll(api.alerts, 5000);
+  const healthPoll = usePoll(api.health, 5000);
+  const evaluationPoll = usePoll(api.evaluation, 5000);
   const anomalyPoll = usePoll(api.anomaly, 5000);
 
   const health = healthPoll.data;
+  const evaluation = evaluationPoll.data;
   const anomaly = anomalyPoll.data;
 
-  const alerts = useMemo(() => alertsPoll.data?.alerts ?? [], [alertsPoll.data]);
   const scores = useMemo(() => anomaly?.scores ?? [], [anomaly]);
-  const alertsLoaded = Boolean(alertsPoll.data);
   const flaggedScores = scores.filter((row) => row.is_anomaly).length;
 
-  const { ruleCount, mlCount, techniques } = useMemo(() => {
-    const byTechnique = new Map();
-    let ml = 0;
-
-    alerts.forEach((alert) => {
-      if (alert.rule === ML_RULE) {
-        ml += 1;
-      } else if (alert.technique) {
-        byTechnique.set(alert.technique, (byTechnique.get(alert.technique) || 0) + 1);
-      }
-    });
-
-    return {
-      ruleCount: alerts.length - ml,
-      mlCount: ml,
-      techniques: [...byTechnique.entries()]
+  const evaluationLoaded = Boolean(evaluation);
+  const ruleCount = evaluation?.rule_alerts ?? 0;
+  const mlCount = evaluation?.ml_alerts ?? 0;
+  const techniques = useMemo(
+    () =>
+      Object.entries(evaluation?.by_technique ?? {})
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
-    };
-  }, [alerts]);
+    [evaluation]
+  );
 
-  const mlReady = health?.ml_ready ?? anomaly?.ml_ready;
-  const mlAlerting = health?.ml_alerting ?? anomaly?.ml_alerting;
+  const mlReady = evaluation?.ml_ready ?? health?.ml_ready;
+  const mlAlerting = evaluation?.ml_alerting ?? health?.ml_alerting;
   const ml = describeMl(mlReady, mlAlerting);
+
+  const scoredTotal = evaluation?.anomaly_scores;
+  const flaggedTotal = evaluation?.anomalies_flagged;
+  const flaggedShare =
+    typeof scoredTotal === "number" && scoredTotal > 0 && typeof flaggedTotal === "number"
+      ? `${((flaggedTotal / scoredTotal) * 100).toFixed(2)}%`
+      : "-";
 
   const errors = [
     healthPoll.error && "/api/health",
-    alertsPoll.error && "/api/alerts",
+    evaluationPoll.error && "/api/evaluation",
     anomalyPoll.error && "/api/anomaly",
   ].filter(Boolean);
 
@@ -139,15 +137,16 @@ export default function Evaluation() {
   const maxKind = Math.max(ruleCount, mlCount);
   const show = (value) => (typeof value === "number" ? value.toLocaleString("en-US") : "-");
 
-  // Say why a zero is a zero. A bare 0 reads as "broken" in a viva.
   let mlZeroNote = null;
-  if (alertsLoaded && mlCount === 0) {
+  if (evaluationLoaded && mlCount === 0) {
     mlZeroNote =
-      mlAlerting === false
-        ? "0 ML alerts because ML is not allowed to alert in this configuration."
-        : mlAlerting === true
-          ? "0 ML alerts: no score crossed the alert threshold in the returned alerts."
-          : "0 ML alerts. The API did not say whether ML can alert.";
+      mlReady === false
+        ? "0 ML alerts because no model is loaded. The server was started with --no-ml or found no model files in server/ml/."
+        : mlAlerting === false
+          ? "0 ML alerts because ML alerting is off. The model scores every event, but only the server started with --ml-alerting turns a flagged score into an ML-ANOM alert. Off is the default, because a flag rate of a few percent would bury the rule alerts."
+          : mlAlerting === true
+            ? "0 ML alerts: ML alerting is on, but no flagged score has been turned into an alert yet."
+            : "0 ML alerts. The API did not say whether ML can alert.";
   }
 
   return (
@@ -156,8 +155,9 @@ export default function Evaluation() {
         <div className="eyebrow">Detection quality</div>
         <h1>Evaluation</h1>
         <p>
-          Rule alerts, ML status and recent anomaly scores, all from the API. The counts cover the
-          latest alerts the API returns (at most 300).
+          Counts come from /api/evaluation and cover everything stored since the database was
+          created. The ring and the score table come from /api/anomaly, which keeps only the newest
+          300 scores.
         </p>
       </div>
 
@@ -168,18 +168,29 @@ export default function Evaluation() {
       )}
 
       <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Total events" value={show(health?.counts?.events)} sub="from /api/health" tone="signal" />
-        <StatCard label="Total alerts" value={show(health?.counts?.alerts)} sub="from /api/health" tone="high" />
+        <StatCard label="Total events" value={show(evaluation?.total_events)} sub="stored events" tone="signal" />
+        <StatCard label="Total alerts" value={show(evaluation?.total_alerts)} sub="stored alerts" tone="high" />
+        <StatCard label="Rule alerts" value={show(evaluation?.rule_alerts)} sub="raised by YAML rules" tone="signal" />
+        <StatCard label="ML alerts" value={show(evaluation?.ml_alerts)} sub="technique ML-ANOM" tone="ml" />
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard label="Incidents" value={show(evaluation?.incidents)} sub="grouped alerts" />
         <StatCard
-          label="Rule alerts"
-          value={alertsLoaded ? ruleCount : "-"}
-          sub="counted from alert records"
-          tone="signal"
+          label="Alerts per incident"
+          value={evaluationLoaded ? evaluation.alerts_per_incident : "-"}
+          sub="alerts in incidents / incidents"
         />
         <StatCard
-          label="ML alerts"
-          value={alertsLoaded ? mlCount : "-"}
-          sub={`rule id ${ML_RULE}`}
+          label="Events scored by ML"
+          value={show(scoredTotal)}
+          sub="since the server started"
+          tone="ml"
+        />
+        <StatCard
+          label="Flagged by ML"
+          value={show(flaggedTotal)}
+          sub={`${flaggedShare} of scored, since the server started`}
           tone="ml"
         />
       </div>
@@ -215,7 +226,7 @@ export default function Evaluation() {
               <div className="font-mono text-[11px] leading-relaxed text-mute">
                 <div>of the last {scores.length} scores</div>
                 <div>mode {health?.ml_mode ?? "-"}</div>
-                <div>API total flagged {show(anomaly?.anomaly_count)}</div>
+                <div>flagged in that window {show(anomaly?.anomaly_count)}</div>
               </div>
             </div>
             {mlZeroNote && <p className="mt-2 text-[11px] leading-snug text-medium">{mlZeroNote}</p>}
@@ -241,6 +252,7 @@ export default function Evaluation() {
                     <th className="px-3 py-1.5 text-right">iforest</th>
                     <th className="px-3 py-1.5 text-right">recon error</th>
                     <th className="px-3 py-1.5">flag</th>
+                    <th className="px-3 py-1.5">checks</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -258,6 +270,7 @@ export default function Evaluation() {
                       <td className={`px-3 py-1 font-mono ${row.is_anomaly ? "text-critical" : "text-mute"}`}>
                         {row.is_anomaly ? "anomaly" : "normal"}
                       </td>
+                      <td className="px-3 py-1 font-mono text-[11px] text-mute">{checksFired(row) || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -284,7 +297,7 @@ export default function Evaluation() {
           <div className="panel-body grid gap-2.5">
             {techniques.length === 0 ? (
               <p className="font-mono text-[11px] text-mute">
-                {alertsLoaded ? "No technique ids in the returned alerts." : "Waiting for alerts."}
+                {evaluationLoaded ? "No rule alerts stored yet." : "Waiting for /api/evaluation."}
               </p>
             ) : (
               techniques.map((item) => (
@@ -296,8 +309,9 @@ export default function Evaluation() {
       </div>
 
       <p className="mt-3 font-mono text-[10px] leading-relaxed text-mute">
-        Sources: /api/health, /api/alerts, /api/anomaly. kts is kernel time in seconds since boot,
-        not wall-clock time.
+        Sources: /api/evaluation, /api/anomaly, /api/health. Stored counts start again when
+        data/hids.db is deleted, the ML counters when the server restarts. kts is kernel time in
+        seconds since boot, not wall-clock time.
       </p>
     </div>
   );
