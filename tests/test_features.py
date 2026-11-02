@@ -126,3 +126,12 @@ def test_exe_path_falls_back_to_comm_without_exec():
     p = ProcessState(pid=1, ppid=0, comm="cron", uid=0)
     p.update(ev(1.0, "READ", "/etc/shadow", uid=0, comm="cron"))
     assert p.exe_path == "cron"
+
+
+def test_read_does_not_count_as_a_distinct_event_type():
+    p = ProcessState(pid=1, ppid=0, comm="sudo", uid=0)
+    p.update(ev(1.0, "EXEC", "/usr/bin/sudo"))
+    p.update(ev(2.0, "READ", "/etc/shadow", uid=0))
+    assert p.types == {"EXEC"}
+    assert "READ" in p.last_seen
+    assert len(p.event_times) == 2

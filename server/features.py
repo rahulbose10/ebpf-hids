@@ -127,7 +127,8 @@ class ProcessState:
 
         previous = self.last_seen.get(etype)
         self.last_seen[etype] = ts if previous is None else max(previous, ts)
-        self.types.add(etype)
+        if etype != "READ":
+            self.types.add(etype)
         self.event_times.append(ts)
 
         self.uid = evt["uid"]
