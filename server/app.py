@@ -1,6 +1,7 @@
 import argparse
 import atexit
 import ipaddress
+import json
 import os
 import re
 import secrets
@@ -10,10 +11,10 @@ import sys
 import threading
 from datetime import timedelta
 
-from flask import Flask, request, send_from_directory
+from flask import Flask, Response, request, send_from_directory
 from werkzeug.security import safe_join
 
-from server import auth, config, db, mitre, response
+from server import auth, config, db, mitre, navigator, response
 from server.engine import Engine
 from server.incidents import TRANSITIONS, IncidentManager
 from server.ioc import IOC_TYPES, IOCStore
@@ -309,6 +310,21 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/navigator")
+    @auth.login_required
+    def navigator_layer():
+        return navigator.build_layer(db.technique_counts())
+
+    @app.route("/api/navigator/download")
+    @auth.login_required
+    def navigator_download():
+        layer = navigator.build_layer(db.technique_counts())
+        return Response(
+            json.dumps(layer, indent=2),
+            mimetype="application/json",
+            headers={"Content-Disposition": 'attachment; filename="ebpf-hids-layer.json"'},
+        )
 
     @app.route("/api/users")
     @auth.require_role("admin")
