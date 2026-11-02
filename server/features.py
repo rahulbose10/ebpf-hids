@@ -163,7 +163,7 @@ class ProcessState:
                     self.root_gain_count += 1
         elif etype == "UNLINK":
             self.unlink_count += 1
-            if not is_routine_churn(detail):
+            if self.file_write_count and not is_routine_churn(detail):
                 self.destruction_times.append(ts)
         elif etype == "RENAME":
             self.rename_count += 1
