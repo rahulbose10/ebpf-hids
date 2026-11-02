@@ -25,6 +25,14 @@ class OldShapeModel:
         return {"iforest_score": 0.1, "recon_error": None, "is_anomaly": False}
 
 
+class ForestModel:
+    alerting = False
+
+    def score(self, vec):
+        return {"iforest_score": 0.05, "recon_error": 0.1, "is_anomaly": True, "iforest_anomaly": True,
+                "ae_anomaly": False, "limit_anomaly": False, "over_limit": [], "confidence": 0.3}
+
+
 def test_score_row_keeps_which_check_flagged_it():
     eng = Engine(anomaly_model=LimitModel(), featurize=featurize)
     eng.process_event(ev(1.0, 300, "EXEC", "/bin/a"))
@@ -48,6 +56,7 @@ def test_model_without_the_new_keys_gets_safe_defaults():
     eng.process_event(ev(1.0, 302, "EXEC", "/bin/a"))
     row = eng.anomaly_scores[-1]
     assert row["ae_anomaly"] is False
+    assert row["iforest_anomaly"] is False
     assert row["limit_anomaly"] is False
     assert row["over_limit"] == []
 
@@ -58,3 +67,12 @@ def test_row_does_not_share_the_models_list():
     eng.process_event(ev(1.0, 303, "EXEC", "/bin/a"))
     eng.anomaly_scores[-1]["over_limit"].append("changed")
     assert model.score(None)["over_limit"] == ["exec_count", "burst_rate"]
+
+
+def test_score_row_says_when_the_forest_flagged_it():
+    eng = Engine(anomaly_model=ForestModel(), featurize=featurize)
+    eng.process_event(ev(1.0, 304, "EXEC", "/bin/a"))
+    row = eng.anomaly_scores[-1]
+    assert row["iforest_anomaly"] is True
+    assert row["ae_anomaly"] is False
+    assert row["limit_anomaly"] is False
