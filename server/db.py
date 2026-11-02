@@ -384,6 +384,45 @@ def set_incident_status(incident_id, new_status, changed_by, note=""):
     return True
 
 
+def export_alerts(limit):
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT id, ts, rule, technique, severity, confidence, pid, comm, summary, incident_id
+           FROM alerts ORDER BY id ASC LIMIT ?""",
+        (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def export_incidents(limit):
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM incidents ORDER BY id ASC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def report_numbers():
+    conn = get_connection()
+    by_severity = {
+        row["severity"]: row["n"]
+        for row in conn.execute("SELECT severity, COUNT(*) AS n FROM alerts GROUP BY severity")
+    }
+    top_rules = [
+        {"rule": row["rule"], "technique": row["technique"], "count": row["n"]}
+        for row in conn.execute(
+            """SELECT rule, technique, COUNT(*) AS n FROM alerts
+               GROUP BY rule, technique ORDER BY n DESC, rule ASC LIMIT 10"""
+        )
+    ]
+    by_status = {
+        row["status"]: row["n"]
+        for row in conn.execute("SELECT status, COUNT(*) AS n FROM incidents GROUP BY status")
+    }
+    conn.close()
+    return {"by_severity": by_severity, "top_rules": top_rules, "by_status": by_status}
+
+
 def incident_audit(incident_id):
     conn = get_connection()
     rows = conn.execute(

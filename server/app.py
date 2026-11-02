@@ -14,7 +14,7 @@ from datetime import timedelta
 from flask import Flask, Response, request, send_from_directory
 from werkzeug.security import safe_join
 
-from server import auth, config, db, mitre, navigator, response
+from server import auth, config, db, mitre, navigator, reports, response
 from server.engine import Engine
 from server.incidents import TRANSITIONS, IncidentManager
 from server.ioc import IOC_TYPES, IOCStore
@@ -46,6 +46,16 @@ def _limit(default):
 
 
 ENFORCEMENT_SETTINGS = ("enabled", "dry_run", "min_severity")
+
+REPORT_PAGE_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _csv_reply(text, filename):
+    return Response(text, mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 HASH_RE = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
 USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,32}")
@@ -310,6 +320,35 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/reports/summary")
+    @auth.login_required
+    def report_summary():
+        return reports.summary(
+            db.counts(), db.report_numbers(), list(TRANSITIONS), db.technique_counts(),
+            pipeline.stats["ml_scored"], pipeline.stats["ml_flagged"],
+        )
+
+    @app.route("/api/reports/alerts.csv")
+    @auth.login_required
+    def report_alerts_csv():
+        rows = db.export_alerts(config.REPORT_MAX_ROWS)
+        return _csv_reply(reports.to_csv(rows, reports.ALERT_COLUMNS), "alerts.csv")
+
+    @app.route("/api/reports/incidents.csv")
+    @auth.login_required
+    def report_incidents_csv():
+        rows = db.export_incidents(config.REPORT_MAX_ROWS)
+        return _csv_reply(reports.to_csv(rows, reports.INCIDENT_COLUMNS), "incidents.csv")
+
+    @app.route("/api/reports/incident/<int:incident_id>.html")
+    @auth.login_required
+    def report_incident(incident_id):
+        incident = db.get_incident(incident_id)
+        if incident is None:
+            return {"error": "unknown incident"}, 404
+        page = reports.incident_html(incident, db.incident_audit(incident_id))
+        return Response(page, mimetype="text/html", headers=REPORT_PAGE_HEADERS)
 
     @app.route("/api/navigator")
     @auth.login_required
