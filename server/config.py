@@ -34,6 +34,14 @@ SENSOR_STALE_SECONDS = 60
 
 SIM_WHITELIST = {
     "demo": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_demo.py")],
+    "reverse-shell": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_reverse_shell.py")],
+    "privilege-escalation": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_privilege_escalation.py")],
+    "benign-exec-chain": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_benign_exec_chain.py")],
+    "ransomware": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_ransomware.py")],
+    "rootkit": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_rootkit.py")],
+    "persistence": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_persistence.py")],
+    "credaccess": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_credaccess.py")],
+    "backdoor": [sys.executable, str(BASE_DIR / "server" / "simulations" / "sim_backdoor.py")],
 }
 SIM_TIMEOUT_SECONDS = 30
 

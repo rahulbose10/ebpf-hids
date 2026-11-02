@@ -22,11 +22,12 @@ from server.ioc import IOC_TYPES, IOCStore
 from server.pipeline import Pipeline
 
 
-def _run_simulation(command):
+def _run_simulation(name, command):
     try:
-        subprocess.run(command, timeout=config.SIM_TIMEOUT_SECONDS, capture_output=True)
+        result = subprocess.run(command, timeout=config.SIM_TIMEOUT_SECONDS, capture_output=True)
+        print(f"simulation {name} exited with code {result.returncode}", file=sys.stderr)
     except Exception as error:
-        print("simulation failed:", error, file=sys.stderr)
+        print(f"simulation {name} failed: {type(error).__name__}: {error}", file=sys.stderr)
 
 
 def _seed_admin():
@@ -317,7 +318,9 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         command = config.SIM_WHITELIST.get(name)
         if command is None:
             return {"error": "unknown simulation"}, 400
-        thread = threading.Thread(target=_run_simulation, args=(command,), daemon=True)
+        if not os.path.isfile(command[-1]):
+            return {"error": "the script for this simulation is not on this server"}, 503
+        thread = threading.Thread(target=_run_simulation, args=(name, command), daemon=True)
         thread.start()
         return {
             "started": name,

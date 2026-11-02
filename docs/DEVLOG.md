@@ -398,3 +398,8 @@ The 31 July 2026 dates on this entry and the three after it are the original aut
 
 ## 2026-11-02 - L2 detection engine, iforest_anomaly in the anomaly row
 - The anomaly score row now carries iforest_anomaly next to ae_anomaly and limit_anomaly. Additive contract change: L4 passes it through /api/anomaly unchanged, L5 can show it. New test, and the key pin in tests/test_ml_features.py updated, 318 passed. Live with the sensor and the real model (iforest+autoencoder+limits): 359 events scored, 3 flagged, all 300 rows in /api/anomaly had the key, none of those 300 was flagged, so a True value has only been seen in the unit test.
+
+## 2026-11-03 - L4 backend, simulation whitelist
+- SIM_WHITELIST holds the 8 Attack Range ids from L5's handoff next to demo. /api/sim now answers 503 when the script file is not on the server instead of a 202 that hides it, and the server log prints every run's exit code. New test checks the page's ids against the whitelist both ways, the script paths, the 503 and the logged exit code. 323 tests pass.
+- Live, server only: demo gave 202 and "simulation demo exited with code 0" in the server log, reverse-shell gave 503 because its script is still on l5-console.
+- Still open: until l5-console is merged, the 8 new buttons answer 503 on main. The button path with the sensor running is L5's check after it pulls this.
