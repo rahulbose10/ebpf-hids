@@ -272,3 +272,64 @@ def test_credential_access_account_tools_stay_quiet_on_read():
         ev(1.1, 4700, 4178, "passwd", "READ", "/etc/shadow", uid=0),
     ]
     assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_su_reading_shadow_stays_quiet():
+    events = [
+        ev(1.0, 5010, 4178, "bash", "EXEC", "/usr/bin/su"),
+        ev(1.1, 5010, 4178, "su", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_gdm_session_worker_stays_quiet():
+    events = [
+        ev(1.0, 5381, 1253, "gdm3", "EXEC", "/usr/libexec/gdm-session-worker", uid=0),
+        ev(1.1, 5381, 1253, "gdm-session-wor", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_cron_child_without_exec_stays_quiet():
+    events = [ev(1.0, 5023, 635, "cron", "READ", "/etc/shadow", uid=0)]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_copy_named_cron_alerts():
+    events = [
+        ev(1.0, 5100, 4178, "bash", "EXEC", "/tmp/cron"),
+        ev(1.1, 5100, 4178, "cron", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_copy_named_su_alerts():
+    events = [
+        ev(1.0, 5101, 4178, "bash", "EXEC", "/tmp/su"),
+        ev(1.1, 5101, 4178, "su", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_log_tampering_su_writing_btmp_stays_quiet():
+    events = [
+        ev(1.0, 5010, 4178, "bash", "EXEC", "/usr/bin/su"),
+        ev(1.1, 5010, 4178, "su", "OPEN", "/var/log/btmp", uid=1000),
+    ]
+    assert "log_tampering" not in fired(Engine(), events)
+
+
+def test_log_tampering_copy_named_su_on_btmp_alerts():
+    events = [
+        ev(1.0, 5102, 4178, "bash", "EXEC", "/tmp/su"),
+        ev(1.1, 5102, 4178, "su", "OPEN", "/var/log/btmp", uid=1000),
+    ]
+    assert "log_tampering" in fired(Engine(), events)
+
+
+def test_log_tampering_other_program_on_btmp_alerts():
+    events = [
+        ev(1.0, 5103, 4178, "bash", "EXEC", "/usr/bin/python3"),
+        ev(1.1, 5103, 4178, "python3", "OPEN", "/var/log/btmp", uid=0),
+    ]
+    assert "log_tampering" in fired(Engine(), events)

@@ -42,6 +42,9 @@ rules:
           - update-alternat
           - Xorg
           - cupsd
+      - field: proc.exe
+        op: not_matches
+        value: '^/usr/bin/su$'
 
   - id: persistence_autostart
     technique: T1547
@@ -61,7 +64,7 @@ rules:
   - id: credential_access
     technique: T1003
     severity: high
-    description: "Open or read of /etc/shadow, /etc/gshadow, /etc/sudoers or an SSH private key by anything except sudo itself and the account tools"
+    description: "Open or read of /etc/shadow, /etc/gshadow, /etc/sudoers or an SSH private key by anything except sudo, su, cron, the gdm session worker and the account tools"
     where:
       - field: evt.type
         op: in_set
@@ -74,7 +77,10 @@ rules:
         value: [passwd, chpasswd, usermod, useradd, userdel, chage, vipw, ssh-keygen]
       - field: proc.exe
         op: not_matches
-        value: '^/usr/bin/sudo$'
+        value: '^/usr/bin/(sudo|su)$|^/usr/libexec/gdm-session-worker$'
+      - field: proc.exe_path
+        op: not_matches
+        value: '^(cron|/usr/sbin/cron)$'
 
   - id: suid_backdoor
     technique: T1548

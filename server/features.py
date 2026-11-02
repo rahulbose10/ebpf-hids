@@ -85,6 +85,10 @@ class ProcessState:
         return self.comm
 
     @property
+    def exe_path(self):
+        return self.exe or self.comm
+
+    @property
     def distinct_files_written(self):
         return len(self.files_written)
 

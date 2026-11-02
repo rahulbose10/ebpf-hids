@@ -113,3 +113,16 @@ def test_root_gain_counts_only_non_root_to_root():
     p.update(ev(3.0, "SETUID", "old_uid=1000 new_uid=0"))
     assert p.root_gain_count == 1
     assert p.setuid_count == 3
+
+
+def test_exe_path_is_the_full_path_when_exec_was_seen():
+    p = ProcessState(pid=1, ppid=0, comm="bash", uid=1000)
+    p.update(ev(1.0, "EXEC", "/tmp/cron"))
+    assert p.exe_path == "/tmp/cron"
+    assert p.exe_name == "cron"
+
+
+def test_exe_path_falls_back_to_comm_without_exec():
+    p = ProcessState(pid=1, ppid=0, comm="cron", uid=0)
+    p.update(ev(1.0, "READ", "/etc/shadow", uid=0, comm="cron"))
+    assert p.exe_path == "cron"
