@@ -217,3 +217,58 @@ def test_ransomware_burst_positive_moving_documents_into_a_cache_folder():
 def test_ransomware_burst_positive_package_named_bait_does_not_hide_the_original():
     details = [f"/home/u/Documents/r{i}.odt -> /home/u/Documents/r{i}.dpkg-tmp" for i in range(30)]
     assert "ransomware_burst" in fired(Engine(), burst(3008, "python3", "RENAME", details, step=0.1))
+
+
+def sudo_exec(ts, pid):
+    return ev(ts, pid, 4178, "bash", "EXEC", "/usr/bin/sudo")
+
+
+def test_credential_access_positive_read_of_shadow():
+    events = [
+        ev(1.0, 4500, 4178, "bash", "EXEC", "/usr/bin/python3"),
+        ev(1.1, 4500, 4178, "python3", "READ", "/etc/shadow"),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_sudo_own_reads_stay_quiet():
+    events = [
+        sudo_exec(1.0, 4397),
+        ev(1.01, 4397, 4178, "sudo", "READ", "/etc/sudoers", uid=0),
+        ev(1.02, 4397, 4178, "sudo", "READ", "/etc/shadow", uid=1000),
+        ev(3.5, 4397, 4178, "sudo", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_sudo_cat_of_shadow_still_alerts():
+    events = [
+        sudo_exec(1.0, 4400),
+        ev(1.1, 4402, 4401, "sudo", "EXEC", "/usr/bin/cat", uid=0),
+        ev(1.2, 4402, 4401, "cat", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_denied_plain_cat_still_alerts():
+    events = [
+        ev(1.0, 4406, 4178, "bash", "EXEC", "/usr/bin/cat"),
+        ev(1.1, 4406, 4178, "cat", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_copy_named_sudo_outside_usr_bin_alerts():
+    events = [
+        ev(1.0, 4600, 4178, "bash", "EXEC", "/tmp/sudo"),
+        ev(1.1, 4600, 4178, "sudo", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_account_tools_stay_quiet_on_read():
+    events = [
+        ev(1.0, 4700, 4178, "sudo", "EXEC", "/usr/bin/passwd", uid=0),
+        ev(1.1, 4700, 4178, "passwd", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
