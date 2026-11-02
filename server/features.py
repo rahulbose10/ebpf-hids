@@ -18,6 +18,7 @@ ROUTINE_CHURN = re.compile(
     r"|^/(root|home/[^/]+)/\.(cache|mozilla|thunderbird|config|local/share)/"
     r"|^/home/[^/]+/snap/[^/]+/[^/]+/\.(cache|mozilla|thunderbird|config|local)/"
     r"|\.dpkg-(tmp|new|old|dist)$"
+    r"|^/tmp/node-compile-cache/"
 )
 
 

@@ -365,3 +365,38 @@ def test_connect_after_exec_copy_named_whoopsie_alerts():
         ev(1.4, 5201, 4178, "whoopsie", "CONNECT", "91.189.95.56:443"),
     ]
     assert "connect_after_exec" in fired(Engine(), events)
+
+
+def cache_swap_events(base):
+    events = []
+    for i in range(60):
+        src = f"{base}/96b{i}.HQHdPV"
+        events.append(ev(i * 0.01, 7811, 4178, "npm", "OPEN", src))
+        events.append(ev(i * 0.01 + 0.005, 7811, 4178, "npm", "RENAME", f"{src} -> {base}/96b{i}"))
+    return events
+
+
+def test_ransomware_burst_node_compile_cache_stays_quiet():
+    events = cache_swap_events("/tmp/node-compile-cache/v22.23.4-x64-9de703df-1000")
+    assert "ransomware_burst" not in fired(Engine(), events)
+
+
+def test_ransomware_burst_same_shape_outside_the_cache_alerts():
+    events = cache_swap_events("/tmp/other-dir")
+    assert "ransomware_burst" in fired(Engine(), events)
+
+
+def test_code_injection_rwx_node_under_nvm_stays_quiet():
+    events = [
+        ev(1.0, 7800, 4178, "bash", "EXEC", "/home/vesper/.nvm/versions/node/v22.23.4/bin/node"),
+        ev(1.5, 7800, 4178, "node", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" not in fired(Engine(), events)
+
+
+def test_code_injection_rwx_copy_named_node_alerts():
+    events = [
+        ev(1.0, 7801, 4178, "bash", "EXEC", "/tmp/node"),
+        ev(1.5, 7801, 4178, "node", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" in fired(Engine(), events)
