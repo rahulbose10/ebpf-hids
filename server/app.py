@@ -10,11 +10,12 @@ import subprocess
 import sys
 import threading
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from flask import Flask, Response, request, send_from_directory
 from werkzeug.security import safe_join
 
-from server import auth, config, db, mitre, navigator, reports, response
+from server import alerting, auth, config, db, mitre, navigator, reports, response
 from server.engine import Engine
 from server.incidents import TRANSITIONS, IncidentManager
 from server.ioc import IOC_TYPES, IOCStore
@@ -46,6 +47,63 @@ def _limit(default):
 
 
 ENFORCEMENT_SETTINGS = ("enabled", "dry_run", "min_severity")
+
+HOST_RE = re.compile(r"[A-Za-z0-9.:-]{1,255}")
+
+
+def _check_alerting(data):
+    checks = {
+        "enabled": lambda v: isinstance(v, bool),
+        "syslog_enabled": lambda v: isinstance(v, bool),
+        "min_severity": lambda v: v in alerting.SEVERITY_ORDER,
+        "throttle_seconds": lambda v: isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 86400,
+        "syslog_port": lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 65535,
+        "syslog_host": lambda v: isinstance(v, str) and HOST_RE.fullmatch(v) is not None,
+        "webhook_url": lambda v: isinstance(v, str) and (v == "" or _good_url(v)),
+    }
+    if not isinstance(data, dict) or not data:
+        return "send at least one of: " + ", ".join(sorted(checks))
+    unknown = sorted(set(data) - set(checks))
+    if unknown:
+        return "unknown setting: " + ", ".join(unknown)
+    for key, check in checks.items():
+        if key in data and not check(data[key]):
+            return "bad value for " + key
+    return None
+
+
+def _good_url(url):
+    if len(url) > 500 or any(ch.isspace() for ch in url):
+        return False
+    parts = urlsplit(url)
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
+ALERTING_KEYS = {
+    "enabled": "ALERT_ENABLED",
+    "min_severity": "ALERT_MIN_SEVERITY",
+    "throttle_seconds": "ALERT_THROTTLE_SECONDS",
+    "webhook_url": "ALERT_WEBHOOK_URL",
+    "syslog_enabled": "ALERT_SYSLOG_ENABLED",
+    "syslog_host": "ALERT_SYSLOG_HOST",
+    "syslog_port": "ALERT_SYSLOG_PORT",
+}
+
+
+def _alerting_state(notifier):
+    state = {key: getattr(config, name) for key, name in ALERTING_KEYS.items()}
+    with notifier.lock:
+        stats = dict(notifier.stats)
+    state.update({
+        "webhook_timeout": config.ALERT_WEBHOOK_TIMEOUT,
+        "severities": list(alerting.SEVERITY_ORDER),
+        "channels": notifier.channels(),
+        "stats": stats,
+        "deliveries": db.recent_deliveries(50),
+        "note": "changes made here last until the server restarts",
+    })
+    return state
+
 
 REPORT_PAGE_HEADERS = {
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
@@ -150,8 +208,10 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
     for problem in engine.rule_errors:
         print(f"rule problem: {problem}", file=sys.stderr)
     incidents = IncidentManager(next_id=db.max_incident_id() + 1)
-    pipeline = Pipeline(engine, incidents, _load_iocs())
-    app.extensions["hids"] = {"engine": engine, "incidents": incidents, "pipeline": pipeline}
+    notifier = alerting.Notifier()
+    pipeline = Pipeline(engine, incidents, _load_iocs(), notifier=notifier)
+    app.extensions["hids"] = {"engine": engine, "incidents": incidents, "pipeline": pipeline,
+                              "notifier": notifier}
 
     @app.route("/api/login", methods=["POST"])
     def login():
@@ -320,6 +380,35 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/alerting")
+    @auth.require_role("admin")
+    def alerting_get():
+        return _alerting_state(notifier)
+
+    @app.route("/api/alerting", methods=["POST"])
+    @auth.require_role("admin")
+    def alerting_set():
+        data = request.get_json(silent=True)
+        problem = _check_alerting(data)
+        if problem:
+            return {"error": problem}, 400
+        for key, value in data.items():
+            setattr(config, ALERTING_KEYS[key], value)
+        print(f"alerting: {auth.current_user()['username']} changed {', '.join(sorted(data))}", file=sys.stderr)
+        return _alerting_state(notifier)
+
+    @app.route("/api/alerting/test", methods=["POST"])
+    @auth.require_role("admin")
+    def alerting_test():
+        if not notifier.channels():
+            return {"error": "no channel is configured, set webhook_url or syslog_enabled first"}, 400
+        body = alerting.payload({
+            "rule": "alerting_test", "technique": None, "severity": "low", "confidence": None,
+            "pid": None, "comm": None, "summary": "test notification from eBPF-HIDS",
+            "ts": None, "incident_id": None,
+        })
+        return {"results": notifier.deliver(body)}
 
     @app.route("/api/reports/summary")
     @auth.login_required

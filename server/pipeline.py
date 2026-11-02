@@ -50,10 +50,11 @@ class ReorderBuffer:
 
 
 class Pipeline:
-    def __init__(self, engine, incidents, iocs, own_pid=None):
+    def __init__(self, engine, incidents, iocs, own_pid=None, notifier=None):
         self.engine = engine
         self.incidents = incidents
         self.iocs = iocs
+        self.notifier = notifier
         self.own_pid = os.getpid() if own_pid is None else own_pid
         self.buffer = ReorderBuffer()
         self.queue = queue.Queue(maxsize=config.INGEST_QUEUE_MAX)
@@ -180,7 +181,7 @@ class Pipeline:
             incident_row = incident.to_dict() if incident is not None else None
         self._step("response", response.respond, alert)
         try:
-            db.insert_alert(
+            alert_id = db.insert_alert(
                 alert["ts"], alert["rule"], alert["technique"], alert["severity"],
                 alert["confidence"], alert["pid"], alert["comm"], alert["summary"],
                 alert["detail"], alert.get("incident_id"),
@@ -192,6 +193,8 @@ class Pipeline:
             self._warn(f"could not store alert {alert.get('rule')}: {type(exc).__name__}: {exc}")
             return
         self.stats["alerts"] += 1
+        if self.notifier is not None:
+            self._step("alerting", self.notifier.notify, alert, alert_id)
 
     def _step(self, name, func, *args):
         try:

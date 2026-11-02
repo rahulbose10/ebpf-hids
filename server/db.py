@@ -423,6 +423,23 @@ def report_numbers():
     return {"by_severity": by_severity, "top_rules": top_rules, "by_status": by_status}
 
 
+def insert_delivery(alert_id, channel, status, detail):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO alert_delivery_log (alert_id, channel, status, ts, detail) VALUES (?, ?, ?, ?, ?)",
+        (alert_id, channel, status, time.time(), detail)
+    )
+    conn.commit()
+    conn.close()
+
+
+def recent_deliveries(limit=50):
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM alert_delivery_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def incident_audit(incident_id):
     conn = get_connection()
     rows = conn.execute(
