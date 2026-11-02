@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <glob.h>
+#include <time.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include "../bpf/common.h"
@@ -13,6 +14,7 @@
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #define MAX_LINKS 32
 #define CORRELATE_PATH "bpf/correlate.bpf.o"
+#define RESCAN_SEC 10
 
 static volatile sig_atomic_t stop = 0;
 
@@ -250,6 +252,7 @@ int main(int argc, char **argv)
 	int nlinks = 0;
 	int up = 0;
 	int nsens;
+	time_t last_scan;
 	size_t i;
 	long err;
 	int n;
@@ -272,6 +275,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "warn: no sensitive map, READ events off\n");
 	else
 		fprintf(stderr, "sensitive paths watched: %d\n", nsens);
+	last_scan = time(NULL);
 
 	rb = ring_buffer__new(events_fd, handle_event, NULL, NULL);
 	err = libbpf_get_error(rb);
@@ -302,6 +306,10 @@ int main(int argc, char **argv)
 		if (n < 0 && n != -EINTR) {
 			fprintf(stderr, "poll failed: %s\n", strerror(-n));
 			break;
+		}
+		if (nsens >= 0 && time(NULL) - last_scan >= RESCAN_SEC) {
+			fill_sensitive(objs, NUM_OBJS);
+			last_scan = time(NULL);
 		}
 	}
 	ring_buffer__consume(rb);
