@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api } from "../api";
+import { api, roleAtLeast, useSession } from "../api";
 import StatCard from "../components/StatCard";
 import SeverityChip from "../components/SeverityChip";
 
@@ -67,6 +67,8 @@ const simulations = [
 ];
 
 export default function AttackRange() {
+  const me = useSession();
+  const canRun = roleAtLeast(me?.role, "analyst");
   const [running, setRunning] = useState("");
   const [results, setResults] = useState({});
 
@@ -163,7 +165,8 @@ export default function AttackRange() {
                 <button
                   type="button"
                   onClick={() => launchSimulation(simulation)}
-                  disabled={Boolean(running)}
+                  disabled={Boolean(running) || !canRun}
+                  title={canRun ? undefined : "Running a simulation needs the analyst role"}
                   className="mt-3 w-full rounded border border-signal/40 bg-signal/10 px-3 py-1.5 text-[12px] font-medium text-signal transition hover:bg-signal/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isRunning ? "Sending..." : "Run simulation"}

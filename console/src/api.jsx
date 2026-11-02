@@ -1,5 +1,18 @@
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+
+const ROLE_ORDER = ["viewer", "analyst", "admin"];
+
+export const SessionContext = createContext({ user: null, role: null, kind: null });
+
+export function useSession() {
+  return useContext(SessionContext);
+}
+
+export function roleAtLeast(role, minimum) {
+  const have = ROLE_ORDER.indexOf(role);
+  return have !== -1 && have >= ROLE_ORDER.indexOf(minimum);
+}
 
 async function req(path, opts = {}) {
   const res = await fetch(`/api${path}`, {

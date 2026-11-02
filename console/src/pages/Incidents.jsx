@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, usePoll } from "../api";
+import { api, roleAtLeast, usePoll, useSession } from "../api";
 import SeverityChip from "../components/SeverityChip";
 import { formatEvent, formatKts } from "../format";
 
@@ -41,6 +41,8 @@ const statusStyles = {
 };
 
 function Incidents() {
+  const me = useSession();
+  const canChange = roleAtLeast(me?.role, "analyst");
   const [selectedId, setSelectedId] = useState(null);
 
   const listPoll = usePoll(api.incidents, 4000);
@@ -388,7 +390,7 @@ function Incidents() {
                       <button
                         key={status}
                         type="button"
-                        disabled={statusUpdating}
+                        disabled={statusUpdating || !canChange}
                         onClick={() =>
                           changeStatus(status)
                         }
@@ -403,6 +405,12 @@ function Incidents() {
                     );
                   })}
                 </div>
+
+                {!canChange && (
+                  <div className="mt-2 font-mono text-[10px] text-mute">
+                    Changing the status needs the analyst role. You are signed in as {me?.role ?? "unknown role"}.
+                  </div>
+                )}
 
                 {statusMessage && (
                   <div className="mt-2 font-mono text-[10px] text-signal">

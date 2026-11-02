@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api, usePoll } from "../api";
+import { api, roleAtLeast, usePoll, useSession } from "../api";
 
 // A copy of L2's rule files (server/rules/*.yml on main at 50d91d3), generated
 // by reading the YAML, not typed by hand. It does two jobs: it supplies the
@@ -482,7 +482,7 @@ function getRuleDescription(rule) {
   );
 }
 
-function RuleCard({ rule, onToggle, busy }) {
+function RuleCard({ rule, onToggle, busy, locked }) {
   const severity = String(rule.severity || "low").toLowerCase();
   const eventType = getEventType(rule);
   const conditions = getRuleCondition(rule);
@@ -504,7 +504,8 @@ function RuleCard({ rule, onToggle, busy }) {
           type="button"
           className={`rule-toggle ${rule.enabled ? "enabled" : ""}`}
           onClick={() => onToggle(rule)}
-          disabled={busy || rule.enabled === null}
+          disabled={busy || locked || rule.enabled === null}
+          title={locked ? "Turning a rule on or off needs the analyst role" : undefined}
           aria-label={`${rule.enabled ? "Disable" : "Enable"} ${rule.id}`}
         >
           <span className="rule-toggle-knob" />
@@ -562,6 +563,8 @@ function RuleCard({ rule, onToggle, busy }) {
 
 export default function Rules() {
   const rulesPoll = usePoll(api.rules, 5000);
+  const me = useSession();
+  const canToggle = roleAtLeast(me?.role, "analyst");
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState("");
 
@@ -1055,6 +1058,12 @@ export default function Rules() {
         not send conditions.
       </p>
 
+      {!canToggle && !demo && (
+        <p className="rules-source">
+          Signed in as {me?.role ?? "unknown role"}. Turning a rule on or off needs the analyst role.
+        </p>
+      )}
+
       {actionError && <div className="rule-error">{actionError}</div>}
 
       {errors.length > 0 && (
@@ -1087,6 +1096,7 @@ export default function Rules() {
                   rule={rule}
                   onToggle={handleToggle}
                   busy={busyId === rule.id}
+                  locked={!canToggle}
                 />
               ))}
             </div>

@@ -17,7 +17,7 @@ function Login({ onLogin }) {
       await api.login(username, password);
       onLogin();
     } catch (err) {
-      setError(err?.unauth ? "Invalid username or password" : "Backend unreachable");
+      setError(err?.unauth ? "Invalid username or password" : err?.error || "Backend unreachable");
       setBusy(false);
     }
   };

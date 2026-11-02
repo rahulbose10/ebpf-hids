@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { api } from "./api";
+import { api, SessionContext } from "./api";
 
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
@@ -41,15 +41,23 @@ const NAV = [
 
 function App() {
   const [session, setSession] = useState("checking");
+  const [me, setMe] = useState(null);
   const [active, setActive] = useState("overview");
 
   useEffect(() => {
     let alive = true;
     api
       .me()
-      .then(() => alive && setSession("in"))
+      .then((data) => {
+        if (!alive) return;
+        setMe(data);
+        setSession("in");
+      })
       .catch(() => alive && setSession("out"));
-    const onUnauth = () => setSession("out");
+    const onUnauth = () => {
+      setMe(null);
+      setSession("out");
+    };
     window.addEventListener("hids:unauth", onUnauth);
     return () => {
       alive = false;
@@ -61,7 +69,20 @@ function App() {
     api
       .logout()
       .catch(() => null)
-      .finally(() => setSession("out"));
+      .finally(() => {
+        setMe(null);
+        setSession("out");
+      });
+  };
+
+  const afterLogin = () => {
+    api
+      .me()
+      .then((data) => {
+        setMe(data);
+        setSession("in");
+      })
+      .catch(() => setSession("out"));
   };
 
   if (session === "checking") {
@@ -69,13 +90,14 @@ function App() {
   }
 
   if (session !== "in") {
-    return <Login onLogin={() => setSession("in")} />;
+    return <Login onLogin={afterLogin} />;
   }
 
   const activeItem = NAV.find((item) => item.id === active);
   const ActiveView = activeItem ? activeItem.view : Overview;
 
   return (
+    <SessionContext.Provider value={me}>
     <div className="dashboard">
       <Sidebar
         nav={NAV}
@@ -89,6 +111,7 @@ function App() {
         <ActiveView />
       </div>
     </div>
+    </SessionContext.Provider>
   );
 }
 
