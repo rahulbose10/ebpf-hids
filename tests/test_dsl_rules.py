@@ -333,3 +333,35 @@ def test_log_tampering_other_program_on_btmp_alerts():
         ev(1.1, 5103, 4178, "python3", "OPEN", "/var/log/btmp", uid=0),
     ]
     assert "log_tampering" in fired(Engine(), events)
+
+
+def test_code_injection_rwx_libreoffice_stays_quiet():
+    events = [
+        ev(1.0, 5043, 5026, "osl_executeProc", "EXEC", "/usr/lib/libreoffice/program/soffice.bin"),
+        ev(1.5, 5043, 5026, "soffice.bin", "MPROTECT", "addr=0x7fbeb4eed000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" not in fired(Engine(), events)
+
+
+def test_code_injection_rwx_copy_named_soffice_alerts():
+    events = [
+        ev(1.0, 5200, 4178, "bash", "EXEC", "/tmp/soffice.bin"),
+        ev(1.5, 5200, 4178, "soffice.bin", "MPROTECT", "addr=0x7fbeb4eed000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" in fired(Engine(), events)
+
+
+def test_connect_after_exec_whoopsie_stays_quiet():
+    events = [
+        ev(1.0, 4632, 1, "(whoopsie)", "EXEC", "/usr/bin/whoopsie"),
+        ev(1.4, 4632, 1, "whoopsie", "CONNECT", "91.189.95.56:443"),
+    ]
+    assert "connect_after_exec" not in fired(Engine(), events)
+
+
+def test_connect_after_exec_copy_named_whoopsie_alerts():
+    events = [
+        ev(1.0, 5201, 4178, "bash", "EXEC", "/tmp/whoopsie"),
+        ev(1.4, 5201, 4178, "whoopsie", "CONNECT", "91.189.95.56:443"),
+    ]
+    assert "connect_after_exec" in fired(Engine(), events)
