@@ -45,6 +45,8 @@
 
 ## 31 July 2026 - L2 detection engine, session
 
+The 31 July 2026 dates on this entry and the three after it are the original author's and git cannot back them up. The repo starts on 2026-09-16 and this work was committed on 2026-10-27 (2546c90).
+
 - Built ProcessState (features.py) with sets for cardinality tracking, tested with
   duplicate file writes to confirm set behavior.
 - Built Engine (engine.py) to look up/create ProcessState per pid.
