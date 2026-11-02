@@ -73,6 +73,23 @@ int handle_execveat(struct trace_event_raw_sys_enter *ctx)
 	return save_pending((const char *)ctx->args[1]);
 }
 
+SEC("tracepoint/sched/sched_process_exec")
+int handle_sched_exec(struct trace_event_raw_sched_process_exec *ctx)
+{
+	struct event *p;
+	__u32 tgid;
+	__u32 off;
+
+	tgid = bpf_get_current_pid_tgid() >> 32;
+	p = bpf_map_lookup_elem(&pending, &tgid);
+	if (!p || p->detail[0])
+		return 0;
+
+	off = ctx->__data_loc_filename & 0xFFFF;
+	bpf_probe_read_kernel_str(p->detail, sizeof(p->detail), (void *)ctx + off);
+	return 0;
+}
+
 SEC("tracepoint/syscalls/sys_exit_execve")
 int handle_execve_exit(struct trace_event_raw_sys_exit *ctx)
 {
