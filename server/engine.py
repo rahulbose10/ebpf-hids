@@ -182,6 +182,7 @@ class Engine:
             "iforest_score": result.get("iforest_score"),
             "recon_error": result.get("recon_error"),
             "is_anomaly": bool(result.get("is_anomaly")),
+            "iforest_anomaly": bool(result.get("iforest_anomaly")),
             "ae_anomaly": bool(result.get("ae_anomaly")),
             "limit_anomaly": bool(result.get("limit_anomaly")),
             "over_limit": list(result.get("over_limit") or []),
