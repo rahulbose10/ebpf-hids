@@ -11,7 +11,7 @@ Status lines ("sensor up", "dropped events") go to stderr, never stdout.
 
 | type | detail | notes |
 |---|---|---|
-| EXEC | /usr/bin/ls | a program that started successfully (execve or execveat returned 0); failed attempts, such as a PATH search, are not reported; comm is still the parent's name and ts is when the exec was asked for |
+| EXEC | /usr/bin/ls | a program that started successfully (execve or execveat returned 0); failed attempts, such as a PATH search, are not reported; comm is still the parent's name and ts is when the exec was asked for; the path is never empty, if the program's copy could not be read yet it is taken from the kernel's own copy |
 | OPEN | /tmp/x | write intent only (O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND) |
 | READ | /etc/shadow | read-only open of a path on the loader list (/etc/shadow, /etc/gshadow, /etc/sudoers, SSH private keys under /root/.ssh and /home/*/.ssh, not .pub); exact match on the path as passed, so a relative open is missed, and a key file created after the loader started is not watched |
 | CONNECT | 5.6.7.8:4444 or [2001:db8:0:0:0:0:0:1]:4444 | IPv4-mapped IPv6 is reported as plain IPv4; port 0 is never emitted |
