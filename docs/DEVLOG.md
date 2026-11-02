@@ -378,10 +378,10 @@ The 31 July 2026 dates on this entry and the three after it are the original aut
 ## 2026-11-02 - L3 anomaly layer, retrained on the new sensor
 - The 2026-11-01 model was trained on captures from the old sensor, before L1 session 6. Rebuilt the loader: 248 tests passed, a test read of /etc/shadow gave 3 READ events, 0 dropped.
 - Old model live on the new sensor: 6112 events, 119 flagged (1.95%), 0 dropped. A quiet session with 42 processes, not comparable with the 69.3% and 74.9% from 2026-11-01.
-- A stream saved with tee holds the server's own events, which the live pipeline drops by pid. With those removed the replay flags the same 119 as the live server.
+- A stream saved with tee holds the server's own events, which the live pipeline drops by pid. With those removed the replay matched the live server exactly: 2185 of 11319 and 284 of 10716.
 - Three new sessions: new1 (6112 events, 633 rows), new2 (sensor only, 36235 events, 2407 rows), new3 (console open, 11319 events, 1347 rows). The old captures are not used any more.
 - Trained on new1 and new2 first. Live on new3: 19.30% flagged, almost all Firefox's cache and socket threads while the console polled the API. The old model flags 64.59% of the same file. Added new3 and trained again on 4387 rows.
-- Final check on a session none of the models saw, live, console open, 16.3 min: 10716 events, 284 flagged (2.65%), 4 processes, 4 ML alerts (15 per hour), 0 rule alerts, 0 dropped. On the same file the old model flags 59.15% and the two session model 34.90%.
-- Synthetic attacks over five seeds: 64% mean (58 to 74). reverse_shell 93.75%, injection and scanner 100%, mass_write 17.5% (0 to 60), privesc 8.75%. The last two are not reliable on the ML; ransomware_burst and suid_shell cover them.
+- Final check on a session none of the models saw, live, console open, 16.3 min: 10716 events, 284 flagged (2.65%), 4 processes, 4 ML alerts if alerting were on (15 per hour), 0 rule alerts, 0 dropped. On the same file the old model flags 59.15% and the two session model 34.90%.
+- Synthetic attacks over the four extra seeds: 64% mean (58 to 74). reverse_shell 93.75%, injection and scanner 100%, mass_write 17.5% (0 to 60), privesc 8.75%. The last two are not reliable on the ML; ransomware_burst and suid_shell cover them.
 - ML alerting stays off by default. server/app.py already loads the model with alerting off unless --ml-alerting is given.
 - Still open: model files only on the VM, the anomaly_scores table is never written, busy Firefox is 95% of what gets flagged, READ is not a feature, samples/events.jsonl re-capture at the end.
