@@ -9,7 +9,7 @@ SEVERITIES = ("low", "medium", "high", "critical")
 EVENT_FIELDS = {"ts", "pid", "ppid", "uid", "comm", "type", "detail"}
 EVENT_TYPES = {
     "EXEC", "OPEN", "CONNECT", "PTRACE", "SETUID", "UNLINK", "RENAME",
-    "MPROTECT", "MODULE", "BIND", "CHMOD", "CORRELATED", "PTRACE_CHECK",
+    "MPROTECT", "MODULE", "BIND", "CHMOD", "READ", "CORRELATED", "PTRACE_CHECK",
 }
 FILE_FIELDS = {"fetched_age"}
 FAMILIES = ("evt", "proc", "parent", "since", "file")

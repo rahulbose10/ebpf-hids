@@ -18,6 +18,7 @@ ROUTINE_CHURN = re.compile(
     r"|^/(root|home/[^/]+)/\.(cache|mozilla|thunderbird|config|local/share)/"
     r"|^/home/[^/]+/snap/[^/]+/[^/]+/\.(cache|mozilla|thunderbird|config|local)/"
     r"|\.dpkg-(tmp|new|old|dist)$"
+    r"|^/tmp/node-compile-cache/"
 )
 
 
@@ -85,6 +86,10 @@ class ProcessState:
         return self.comm
 
     @property
+    def exe_path(self):
+        return self.exe or self.comm
+
+    @property
     def distinct_files_written(self):
         return len(self.files_written)
 
@@ -123,7 +128,8 @@ class ProcessState:
 
         previous = self.last_seen.get(etype)
         self.last_seen[etype] = ts if previous is None else max(previous, ts)
-        self.types.add(etype)
+        if etype != "READ":
+            self.types.add(etype)
         self.event_times.append(ts)
 
         self.uid = evt["uid"]
@@ -132,8 +138,8 @@ class ProcessState:
 
         if etype == "EXEC":
             self.exec_count += 1
+            self.exe = detail or None
             if detail:
-                self.exe = detail
                 self.comm = posixpath.basename(detail)[:COMM_LEN]
         elif etype == "CONNECT":
             self.connect_count += 1
@@ -158,7 +164,7 @@ class ProcessState:
                     self.root_gain_count += 1
         elif etype == "UNLINK":
             self.unlink_count += 1
-            if not is_routine_churn(detail):
+            if self.file_write_count and not is_routine_churn(detail):
                 self.destruction_times.append(ts)
         elif etype == "RENAME":
             self.rename_count += 1

@@ -10,6 +10,9 @@ rules:
       - field: evt.detail
         op: matches
         value: 'prot=[r-]wx'
+      - field: proc.exe
+        op: not_matches
+        value: '^/usr/lib/libreoffice/program/soffice\.bin$|^(/usr(/local)?/bin|/home/[^/]+/\.nvm/versions/node/[^/]+/bin)/node$'
 
   - id: kernel_module_load
     technique: T1547

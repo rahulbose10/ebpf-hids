@@ -45,6 +45,8 @@
 
 ## 31 July 2026 - L2 detection engine, session
 
+The 31 July 2026 dates on this entry and the three after it are the original author's and git cannot back them up. The repo starts on 2026-09-16 and this work was committed on 2026-10-27 (2546c90).
+
 - Built ProcessState (features.py) with sets for cardinality tracking, tested with
   duplicate file writes to confirm set behavior.
 - Built Engine (engine.py) to look up/create ProcessState per pid.
@@ -347,3 +349,13 @@
 - 5 minute idle run, old and new build at the same time over the same window: OPEN 79 and 78, RENAME 33 and 34, CONNECT 28 and 28, UNLINK 24 and 24, MPROTECT 14 and 14, EXEC 1 and 1, CHMOD 1 and 1, READ 0 and 0, dropped events 0 on both. An idle box shows no EXEC difference. The drop only appears when something searches the PATH. The only READ events seen at all were sudo reading /etc/shadow and /etc/sudoers during my own commands.
 - 216 tests passed after every item. Last live run through the full system: ingest: 40 events, 0 alerts, 0 bad lines, 0 engine errors, and the loader reported dropped events: 0.
 - Still open: samples/events.jsonl has no READ events and the old RENAME form until the full re-capture at the end of the project. READ matches the path as the program passed it, so a relative open of /etc/shadow is missed and keys created after the loader starts are not watched. I did not measure whether cron reads these files. The live run after the absolute path change raised 1 alert and I did not look at which rule. README still shows the old ips_enforce usage. The exec block is by inode, so a copy of the file is not blocked and replacing the file drops the block.
+
+## 2026-11-02 - L2 detection engine, finish session after L1 session 6
+- credential_access matches READ as well as OPEN and covers /etc/sudoers. Skipped on exec path: /usr/bin/sudo, /usr/bin/su, /usr/libexec/gdm-session-worker, and cron through exe_path because cron's job forks never exec. Those were the only shadow readers in a 7337 event idle run.
+- READ added to EVENT_TYPES so since.read loads. READ does not count toward ProcessState.types, so ML feature 0 keeps the meaning L3 trained on. 8 of 537 processes in the idle run had it raised by 1 before.
+- ransomware_burst: unlinks count only for a process that opened a file for writing. rm -rf of 30 and 60 files no longer raises critical, a write then delete loop still does. /tmp/node-compile-cache/ is routine churn after npm raised the rule on 545 cache renames.
+- More exec path exclusions: whoopsie for connect_after_exec, LibreOffice and node for code_injection_rwx, su for log_tampering (it writes /var/log/btmp on a failed login).
+- An EXEC with an empty path now clears exe instead of keeping the old program. Found while proving suid_shell: execl on a string literal gives an empty EXEC detail from the sensor. 1 of 528 EXEC in the idle run (snap-confine). Sensor side handed to L1.
+- All 14 rules fired on the live sensor: 13 in one run (2261 events, 18 alerts), suid_shell with a launcher that copies the path to the stack first. Commands in docs/live-triggers.md.
+- Fresh idle run after all changes, 14:52 to 15:20 with cron.hourly inside: 3365 events, 0 alerts. 247 tests pass, measure_rules 14 of 14 and 0 of 30 benign, samples replay still 160 events and 3 alerts.
+- Still open: suid_shell misses the string literal launcher until L1 fixes the EXEC path. credential_access matches the path as typed, so a relative read like cd /etc && cat shadow is missed, not tested live. Thunderbird and whoopsie exclusions not rechecked on fresh data. IPS BLOCK lines are skipped as bad lines. samples/events.jsonl has no READ until the final re-capture.

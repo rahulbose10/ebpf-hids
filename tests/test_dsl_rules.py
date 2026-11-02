@@ -217,3 +217,195 @@ def test_ransomware_burst_positive_moving_documents_into_a_cache_folder():
 def test_ransomware_burst_positive_package_named_bait_does_not_hide_the_original():
     details = [f"/home/u/Documents/r{i}.odt -> /home/u/Documents/r{i}.dpkg-tmp" for i in range(30)]
     assert "ransomware_burst" in fired(Engine(), burst(3008, "python3", "RENAME", details, step=0.1))
+
+
+def sudo_exec(ts, pid):
+    return ev(ts, pid, 4178, "bash", "EXEC", "/usr/bin/sudo")
+
+
+def test_credential_access_positive_read_of_shadow():
+    events = [
+        ev(1.0, 4500, 4178, "bash", "EXEC", "/usr/bin/python3"),
+        ev(1.1, 4500, 4178, "python3", "READ", "/etc/shadow"),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_sudo_own_reads_stay_quiet():
+    events = [
+        sudo_exec(1.0, 4397),
+        ev(1.01, 4397, 4178, "sudo", "READ", "/etc/sudoers", uid=0),
+        ev(1.02, 4397, 4178, "sudo", "READ", "/etc/shadow", uid=1000),
+        ev(3.5, 4397, 4178, "sudo", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_sudo_cat_of_shadow_still_alerts():
+    events = [
+        sudo_exec(1.0, 4400),
+        ev(1.1, 4402, 4401, "sudo", "EXEC", "/usr/bin/cat", uid=0),
+        ev(1.2, 4402, 4401, "cat", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_denied_plain_cat_still_alerts():
+    events = [
+        ev(1.0, 4406, 4178, "bash", "EXEC", "/usr/bin/cat"),
+        ev(1.1, 4406, 4178, "cat", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_copy_named_sudo_outside_usr_bin_alerts():
+    events = [
+        ev(1.0, 4600, 4178, "bash", "EXEC", "/tmp/sudo"),
+        ev(1.1, 4600, 4178, "sudo", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_account_tools_stay_quiet_on_read():
+    events = [
+        ev(1.0, 4700, 4178, "sudo", "EXEC", "/usr/bin/passwd", uid=0),
+        ev(1.1, 4700, 4178, "passwd", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_su_reading_shadow_stays_quiet():
+    events = [
+        ev(1.0, 5010, 4178, "bash", "EXEC", "/usr/bin/su"),
+        ev(1.1, 5010, 4178, "su", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_gdm_session_worker_stays_quiet():
+    events = [
+        ev(1.0, 5381, 1253, "gdm3", "EXEC", "/usr/libexec/gdm-session-worker", uid=0),
+        ev(1.1, 5381, 1253, "gdm-session-wor", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_cron_child_without_exec_stays_quiet():
+    events = [ev(1.0, 5023, 635, "cron", "READ", "/etc/shadow", uid=0)]
+    assert "credential_access" not in fired(Engine(), events)
+
+
+def test_credential_access_copy_named_cron_alerts():
+    events = [
+        ev(1.0, 5100, 4178, "bash", "EXEC", "/tmp/cron"),
+        ev(1.1, 5100, 4178, "cron", "READ", "/etc/shadow", uid=0),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_credential_access_copy_named_su_alerts():
+    events = [
+        ev(1.0, 5101, 4178, "bash", "EXEC", "/tmp/su"),
+        ev(1.1, 5101, 4178, "su", "READ", "/etc/shadow", uid=1000),
+    ]
+    assert "credential_access" in fired(Engine(), events)
+
+
+def test_log_tampering_su_writing_btmp_stays_quiet():
+    events = [
+        ev(1.0, 5010, 4178, "bash", "EXEC", "/usr/bin/su"),
+        ev(1.1, 5010, 4178, "su", "OPEN", "/var/log/btmp", uid=1000),
+    ]
+    assert "log_tampering" not in fired(Engine(), events)
+
+
+def test_log_tampering_copy_named_su_on_btmp_alerts():
+    events = [
+        ev(1.0, 5102, 4178, "bash", "EXEC", "/tmp/su"),
+        ev(1.1, 5102, 4178, "su", "OPEN", "/var/log/btmp", uid=1000),
+    ]
+    assert "log_tampering" in fired(Engine(), events)
+
+
+def test_log_tampering_other_program_on_btmp_alerts():
+    events = [
+        ev(1.0, 5103, 4178, "bash", "EXEC", "/usr/bin/python3"),
+        ev(1.1, 5103, 4178, "python3", "OPEN", "/var/log/btmp", uid=0),
+    ]
+    assert "log_tampering" in fired(Engine(), events)
+
+
+def test_code_injection_rwx_libreoffice_stays_quiet():
+    events = [
+        ev(1.0, 5043, 5026, "osl_executeProc", "EXEC", "/usr/lib/libreoffice/program/soffice.bin"),
+        ev(1.5, 5043, 5026, "soffice.bin", "MPROTECT", "addr=0x7fbeb4eed000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" not in fired(Engine(), events)
+
+
+def test_code_injection_rwx_copy_named_soffice_alerts():
+    events = [
+        ev(1.0, 5200, 4178, "bash", "EXEC", "/tmp/soffice.bin"),
+        ev(1.5, 5200, 4178, "soffice.bin", "MPROTECT", "addr=0x7fbeb4eed000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" in fired(Engine(), events)
+
+
+def test_connect_after_exec_whoopsie_stays_quiet():
+    events = [
+        ev(1.0, 4632, 1, "(whoopsie)", "EXEC", "/usr/bin/whoopsie"),
+        ev(1.4, 4632, 1, "whoopsie", "CONNECT", "91.189.95.56:443"),
+    ]
+    assert "connect_after_exec" not in fired(Engine(), events)
+
+
+def test_connect_after_exec_copy_named_whoopsie_alerts():
+    events = [
+        ev(1.0, 5201, 4178, "bash", "EXEC", "/tmp/whoopsie"),
+        ev(1.4, 5201, 4178, "whoopsie", "CONNECT", "91.189.95.56:443"),
+    ]
+    assert "connect_after_exec" in fired(Engine(), events)
+
+
+def cache_swap_events(base):
+    events = []
+    for i in range(60):
+        src = f"{base}/96b{i}.HQHdPV"
+        events.append(ev(i * 0.01, 7811, 4178, "npm", "OPEN", src))
+        events.append(ev(i * 0.01 + 0.005, 7811, 4178, "npm", "RENAME", f"{src} -> {base}/96b{i}"))
+    return events
+
+
+def test_ransomware_burst_node_compile_cache_stays_quiet():
+    events = cache_swap_events("/tmp/node-compile-cache/v22.23.4-x64-9de703df-1000")
+    assert "ransomware_burst" not in fired(Engine(), events)
+
+
+def test_ransomware_burst_same_shape_outside_the_cache_alerts():
+    events = cache_swap_events("/tmp/other-dir")
+    assert "ransomware_burst" in fired(Engine(), events)
+
+
+def test_code_injection_rwx_node_under_nvm_stays_quiet():
+    events = [
+        ev(1.0, 7800, 4178, "bash", "EXEC", "/home/vesper/.nvm/versions/node/v22.23.4/bin/node"),
+        ev(1.5, 7800, 4178, "node", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" not in fired(Engine(), events)
+
+
+def test_code_injection_rwx_copy_named_node_alerts():
+    events = [
+        ev(1.0, 7801, 4178, "bash", "EXEC", "/tmp/node"),
+        ev(1.5, 7801, 4178, "node", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" in fired(Engine(), events)
+
+
+def test_excluded_program_exec_with_empty_path_loses_its_exclusion():
+    events = [
+        ev(1.0, 7900, 4178, "bash", "EXEC", "/home/vesper/.nvm/versions/node/v22.23.4/bin/node"),
+        ev(1.1, 7900, 4178, "node", "EXEC", ""),
+        ev(1.5, 7900, 4178, "node", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" in fired(Engine(), events)

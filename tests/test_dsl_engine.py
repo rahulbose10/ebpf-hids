@@ -368,3 +368,8 @@ def test_suid_shell_positive_root_gain_after_an_earlier_root_to_root_call():
     eng.process_event(ev(1.1, 5840, 1, "x", "SETUID", "old_uid=0 new_uid=0", uid=0))
     alerts = eng.process_event(ev(1.2, 5840, 1, "x", "EXEC", "/bin/bash", uid=0))
     assert [a["rule"] for a in alerts] == ["suid_shell"]
+
+
+def test_read_is_a_known_event_type_for_since_fields():
+    cond = Condition({"field": "since.read", "op": "lte", "value": 1.0})
+    assert cond.name == "read"

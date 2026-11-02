@@ -64,6 +64,7 @@ def test_exe_name_falls_back_to_comm():
 
 def test_destruction_times_keep_the_newest_not_the_oldest():
     p = ProcessState(pid=1, ppid=0, comm="x", uid=1000)
+    p.update(ev(0.0, "OPEN", "/tmp/out"))
     for i in range(MAX_TRACK + 10):
         p.update(ev(float(i), "UNLINK", f"/tmp/{i}"))
     assert p.destruction_times[-1] == float(MAX_TRACK + 9)
@@ -113,3 +114,57 @@ def test_root_gain_counts_only_non_root_to_root():
     p.update(ev(3.0, "SETUID", "old_uid=1000 new_uid=0"))
     assert p.root_gain_count == 1
     assert p.setuid_count == 3
+
+
+def test_exe_path_is_the_full_path_when_exec_was_seen():
+    p = ProcessState(pid=1, ppid=0, comm="bash", uid=1000)
+    p.update(ev(1.0, "EXEC", "/tmp/cron"))
+    assert p.exe_path == "/tmp/cron"
+    assert p.exe_name == "cron"
+
+
+def test_exe_path_falls_back_to_comm_without_exec():
+    p = ProcessState(pid=1, ppid=0, comm="cron", uid=0)
+    p.update(ev(1.0, "READ", "/etc/shadow", uid=0, comm="cron"))
+    assert p.exe_path == "cron"
+
+
+def test_read_does_not_count_as_a_distinct_event_type():
+    p = ProcessState(pid=1, ppid=0, comm="sudo", uid=0)
+    p.update(ev(1.0, "EXEC", "/usr/bin/sudo"))
+    p.update(ev(2.0, "READ", "/etc/shadow", uid=0))
+    assert p.types == {"EXEC"}
+    assert "READ" in p.last_seen
+    assert len(p.event_times) == 2
+
+
+def test_unlink_burst_without_any_file_write_is_not_destruction():
+    p = ProcessState(pid=1, ppid=0, comm="rm", uid=1000)
+    for i in range(40):
+        p.update(ev(1.0 + i * 0.01, "UNLINK", f"/tmp/lab/f{i}"))
+    assert p.unlink_count == 40
+    assert p.destruction_burst == 0
+
+
+def test_unlink_burst_after_file_writes_is_destruction():
+    p = ProcessState(pid=1, ppid=0, comm="python3", uid=1000)
+    for i in range(40):
+        p.update(ev(1.0 + i * 0.02, "OPEN", f"/tmp/lab/f{i}.enc"))
+        p.update(ev(1.01 + i * 0.02, "UNLINK", f"/tmp/lab/f{i}"))
+    assert p.destruction_burst == 40
+
+
+def test_rename_burst_counts_without_any_file_write():
+    p = ProcessState(pid=1, ppid=0, comm="python3", uid=1000)
+    for i in range(40):
+        p.update(ev(1.0 + i * 0.01, "RENAME", f"/tmp/lab/f{i} -> /tmp/lab/f{i}.locked"))
+    assert p.destruction_burst == 40
+
+
+def test_exec_with_empty_path_forgets_the_old_exe():
+    p = ProcessState(pid=1, ppid=0, comm="su_launch", uid=1000)
+    p.update(ev(1.0, "EXEC", "/tmp/lab17/su_launch"))
+    p.update(ev(1.1, "EXEC", "", uid=0, comm="su_launch"))
+    assert p.exe is None
+    assert p.exe_name == "su_launch"
+    assert p.exec_count == 2
