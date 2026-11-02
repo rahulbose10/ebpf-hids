@@ -7,19 +7,29 @@ import time
 
 RULES_OF_ENGAGEMENT = (
     "sim_backdoor: runs as the user that started it and refuses root. Opens a listening "
-    "TCP socket on 127.0.0.1 on a port the kernel picks, keeps it for one second without "
-    "accepting anyone, and closes it. Then copies /bin/true into a fresh folder under "
-    "/tmp, sets the setuid bit on the copy and deletes the copy and the folder. The copy "
-    "belongs to the user, so the bit gives nothing beyond the user's own rights."
+    "TCP socket on 127.0.0.1 port 8099, or the next free port up to 8109, keeps it for "
+    "one second without accepting anyone, and closes it. Then copies /bin/true into a "
+    "fresh folder under /tmp, sets the setuid bit on the copy and deletes the copy and "
+    "the folder. The copy belongs to the user, so the bit gives nothing beyond the "
+    "user's own rights."
 )
 
 
+PORTS = range(8099, 8110)
+
+
 def listen_briefly():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.bind(("127.0.0.1", 0))
-        server.listen(1)
-        print("listening on 127.0.0.1 port", server.getsockname()[1])
-        time.sleep(1)
+    for port in PORTS:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+            try:
+                server.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            server.listen(1)
+            print("listening on 127.0.0.1 port", port)
+            time.sleep(1)
+            return
+    print("ports 8099 to 8109 are all busy, no listener opened")
 
 
 def setuid_copy():
