@@ -366,3 +366,10 @@ The 31 July 2026 dates on this entry and the three after it are the original aut
 - SSH keys created after start: the loader now re-reads the sensitive list every 10 seconds. A key created after start and read 12 seconds later: 0 READ before, 1 after. The .pub file is still skipped.
 - 247 tests passed after each fix, 0 build warnings, full system runs with 0 bad lines and 0 engine errors and 0 dropped events. One live run with the relative cat shadow raised 1 alert, which rule was not checked.
 - Still open: a key read within 10 seconds of being created is missed. ./ and ../ forms of a sensitive path are missed. samples/events.jsonl still predates all of today's sensor changes.
+
+## 2026-11-02 - L2 detection engine, retest after the L1 fixes
+- Ran the three L1 sensor fixes from main 5260149 through the engine. No L2 code or rule changed. One live run: 241 events, 6 alerts, 0 bad lines, 0 engine errors, 0 dropped events.
+- cd /etc && cat shadow: READ detail is /etc/shadow and credential_access fired, as uid 1000 and again under sudo. Four sudo processes read shadow and sudoers in the run and none alerted, so the alert L1 saw came from cat.
+- SSH key created after the sensor started and read 12.0 s later: 1 READ, 1 alert.
+- execl("/bin/sh") on a string literal from a setuid launcher: EXEC detail /bin/sh, suid_shell fired. 0 empty EXEC details in the run.
+- Still open: cat ./shadow is missed (L1's measurement, not tried here). A key read within 10 s of creation is missed. snap-confine not retested. A key that exists at sensor start never tested. samples/events.jsonl predates all of today's sensor changes.
