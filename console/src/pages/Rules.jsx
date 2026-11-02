@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { api, usePoll } from "../api";
 
-// A copy of L2's rule files (server/rules/*.yml on main at 1f3506c), generated
+// A copy of L2's rule files (server/rules/*.yml on main at 50d91d3), generated
 // by reading the YAML, not typed by hand. It does two jobs: it supplies the
 // "on" and "where" lines on each card, because the /api/rules contract has no
 // condition field, and it is the fallback list when /api/rules does not answer.
 // If L2 changes a rule file, regenerate this copy, or the card shows an old
 // condition.
-const RULES_SOURCE = "server/rules/*.yml @ main 1f3506c";
+const RULES_SOURCE = "server/rules/*.yml @ main 50d91d3";
 
 const RULE_SNAPSHOT = [
   {
@@ -34,7 +34,7 @@ const RULE_SNAPSHOT = [
       {
         "field": "proc.exe",
         "op": "not_matches",
-        "value": "^(/usr)?/s?bin/(curl|wget|ping|ping6|git|ssh|scp|sftp|rsync|apt|apt-get|snap|dig|host|nslookup)$|^/usr/lib/(apt/methods|git-core)/|^/snap/|^/usr/lib/snapd/|^/usr/lib/(thunderbird|firefox)/"
+        "value": "^(/usr)?/s?bin/(curl|wget|ping|ping6|git|ssh|scp|sftp|rsync|apt|apt-get|snap|dig|host|nslookup|whoopsie)$|^/usr/lib/(apt/methods|git-core)/|^/snap/|^/usr/lib/snapd/|^/usr/lib/(thunderbird|firefox)/"
       }
     ]
   },
@@ -190,6 +190,11 @@ const RULE_SNAPSHOT = [
           "Xorg",
           "cupsd"
         ]
+      },
+      {
+        "field": "proc.exe",
+        "op": "not_matches",
+        "value": "^/usr/bin/su$"
       }
     ]
   },
@@ -230,17 +235,20 @@ const RULE_SNAPSHOT = [
     "id": "credential_access",
     "technique": "T1003",
     "severity": "high",
-    "description": "Write-intent open of /etc/shadow, /etc/gshadow or an SSH private key (reads are not visible to the sensor)",
+    "description": "Open or read of /etc/shadow, /etc/gshadow, /etc/sudoers or an SSH private key by anything except sudo, su, cron, the gdm session worker and the account tools",
     "where": [
       {
         "field": "evt.type",
-        "op": "eq",
-        "value": "OPEN"
+        "op": "in_set",
+        "value": [
+          "OPEN",
+          "READ"
+        ]
       },
       {
         "field": "evt.detail",
         "op": "matches",
-        "value": "^(/etc/(shadow|gshadow)|/(root|home/[^/]+)/\\.ssh/id_[^/.]+)$"
+        "value": "^(/etc/(shadow|gshadow|sudoers)|/(root|home/[^/]+)/\\.ssh/id_[^/.]+)$"
       },
       {
         "field": "proc.exe_name",
@@ -255,6 +263,16 @@ const RULE_SNAPSHOT = [
           "vipw",
           "ssh-keygen"
         ]
+      },
+      {
+        "field": "proc.exe",
+        "op": "not_matches",
+        "value": "^/usr/bin/(sudo|su)$|^/usr/libexec/gdm-session-worker$"
+      },
+      {
+        "field": "proc.exe_path",
+        "op": "not_matches",
+        "value": "^(cron|/usr/sbin/cron)$"
       }
     ]
   },
@@ -320,6 +338,11 @@ const RULE_SNAPSHOT = [
         "field": "evt.detail",
         "op": "matches",
         "value": "prot=[r-]wx"
+      },
+      {
+        "field": "proc.exe",
+        "op": "not_matches",
+        "value": "^/usr/lib/libreoffice/program/soffice\\.bin$|^(/usr(/local)?/bin|/home/[^/]+/\\.nvm/versions/node/[^/]+/bin)/node$"
       }
     ]
   },
@@ -439,7 +462,7 @@ function getRuleTitle(rule) {
     ransomware_burst: "Burst of deletes and renames",
     log_tampering: "Write or delete under /var/log",
     persistence_autostart: "Write to an autostart location",
-    credential_access: "Write-intent open of a credential file",
+    credential_access: "Open or read of a credential file",
     suid_backdoor: "setuid or setgid bit set by chmod",
     world_writable_sensitive: "File under /etc made world-writable",
     code_injection_rwx: "Writable and executable memory",
