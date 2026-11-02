@@ -53,7 +53,7 @@ sudo rm /etc/lab17.conf
 
 ## Privilege, memory, kernel: suid_shell, ptrace_then_exec, code_injection_rwx, kernel_module_load
 
-The launcher copies the shell path into a stack buffer before execl. That was needed on the first day, when a plain string literal gave an empty EXEC path and suid_shell stayed quiet. The sensor fix in 5260149 covers the literal too (see docs/results.md), so either form works now. This one stays because it is the one the 14 rule run used.
+The launcher copies the shell path into a stack buffer before execl. That was needed before the sensor fix, when a plain string literal gave an empty EXEC path and suid_shell stayed quiet. The sensor fix in 5260149 covers the literal too (see docs/results.md), so either form works now. This one stays because it is the one the 14 rule run used.
 
 ```sh
 cat > /tmp/lab17/su_launch2.c <<'EOF'
