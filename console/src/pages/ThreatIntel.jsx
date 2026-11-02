@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, roleAtLeast, usePoll, useSession } from "../api";
+import { formatWallTime } from "../format";
 
 const FIELD =
   "w-full rounded border border-line bg-ink px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-signal disabled:cursor-not-allowed disabled:opacity-50";
@@ -22,11 +23,6 @@ const TYPE_INFO = {
   },
 };
 
-function wallTime(ts) {
-  if (typeof ts !== "number") return "-";
-  return new Date(ts * 1000).toLocaleString([], { hour12: false });
-}
-
 function IndicatorTable({ type, items, canEdit, busyId, onDelete }) {
   const info = TYPE_INFO[type] ?? { title: type, hint: "" };
 
@@ -47,7 +43,7 @@ function IndicatorTable({ type, items, canEdit, busyId, onDelete }) {
                 <p className="break-all font-mono text-[12px] text-text">{item.value}</p>
                 {item.description && <p className="text-[11px] text-mute">{item.description}</p>}
                 <p className="font-mono text-[10px] text-mute">
-                  #{item.id} added by {item.added_by ?? "-"} at {wallTime(item.ts)}
+                  #{item.id} added by {item.added_by ?? "-"} at {formatWallTime(item.ts)}
                 </p>
               </div>
 

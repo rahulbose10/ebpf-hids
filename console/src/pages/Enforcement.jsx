@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, roleAtLeast, usePoll, useSession } from "../api";
+import { formatWallTime } from "../format";
 import StatCard from "../components/StatCard";
 
 const FIELD =
@@ -43,11 +44,6 @@ function PolicyRow({ title, description, children }) {
       {children}
     </div>
   );
-}
-
-function wallTime(ts) {
-  if (typeof ts !== "number") return "-";
-  return new Date(ts * 1000).toLocaleTimeString([], { hour12: false });
 }
 
 function statusOf(state) {
@@ -324,7 +320,7 @@ export default function Enforcement() {
               <tbody>
                 {actions.map((item, index) => (
                   <tr key={`${item.ts}-${item.pid}-${index}`} className="border-t border-line align-top">
-                    <td className="px-4 py-2 font-mono text-mute">{wallTime(item.ts)}</td>
+                    <td className="px-4 py-2 font-mono text-mute">{formatWallTime(item.ts)}</td>
                     <td className="px-4 py-2 font-mono">{item.pid}</td>
                     <td className="px-4 py-2 font-mono">{item.comm ?? "-"}</td>
                     <td className="px-4 py-2">{item.rule}</td>
