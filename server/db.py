@@ -117,17 +117,7 @@ def init_db():
         )
     """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS anomaly_scores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pid INTEGER,
-            comm TEXT,
-            ts REAL NOT NULL,
-            iforest_score REAL,
-            recon_error REAL,
-            is_anomaly INTEGER NOT NULL DEFAULT 0
-        )
-    """)
+    cur.execute("DROP TABLE IF EXISTS anomaly_scores")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS iocs (
@@ -287,21 +277,6 @@ def recent_alerts(limit=300):
     return alerts
 
 
-def recent_anomaly_scores(limit=300):
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM anomaly_scores ORDER BY id DESC LIMIT ?",
-        (limit,)
-    ).fetchall()
-    conn.close()
-    scores = []
-    for row in rows:
-        score = dict(row)
-        score["is_anomaly"] = bool(score["is_anomaly"])
-        scores.append(score)
-    return scores
-
-
 def counts():
     conn = get_connection()
     result = {
@@ -309,7 +284,6 @@ def counts():
         "processes": conn.execute("SELECT COUNT(DISTINCT pid) FROM events").fetchone()[0],
         "alerts": conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0],
         "incidents": conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0],
-        "anomalies": conn.execute("SELECT COUNT(*) FROM anomaly_scores WHERE is_anomaly = 1").fetchone()[0],
     }
     conn.close()
     return result
@@ -435,10 +409,6 @@ def evaluation_numbers():
     alerts_in_incidents = conn.execute(
         "SELECT COUNT(*) FROM alerts WHERE incident_id IS NOT NULL"
     ).fetchone()[0]
-    anomaly_scores = conn.execute("SELECT COUNT(*) FROM anomaly_scores").fetchone()[0]
-    anomalies_flagged = conn.execute(
-        "SELECT COUNT(*) FROM anomaly_scores WHERE is_anomaly = 1"
-    ).fetchone()[0]
     conn.close()
 
     if incident_count > 0:
@@ -454,8 +424,6 @@ def evaluation_numbers():
         "by_technique": technique_counts(),
         "incidents": incident_count,
         "alerts_per_incident": alerts_per_incident,
-        "anomaly_scores": anomaly_scores,
-        "anomalies_flagged": anomalies_flagged,
     }
 def insert_api_key(name, role):
     conn = get_connection()
