@@ -138,8 +138,8 @@ class ProcessState:
 
         if etype == "EXEC":
             self.exec_count += 1
+            self.exe = detail or None
             if detail:
-                self.exe = detail
                 self.comm = posixpath.basename(detail)[:COMM_LEN]
         elif etype == "CONNECT":
             self.connect_count += 1

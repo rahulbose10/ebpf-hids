@@ -400,3 +400,12 @@ def test_code_injection_rwx_copy_named_node_alerts():
         ev(1.5, 7801, 4178, "node", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
     ]
     assert "code_injection_rwx" in fired(Engine(), events)
+
+
+def test_excluded_program_exec_with_empty_path_loses_its_exclusion():
+    events = [
+        ev(1.0, 7900, 4178, "bash", "EXEC", "/home/vesper/.nvm/versions/node/v22.23.4/bin/node"),
+        ev(1.1, 7900, 4178, "node", "EXEC", ""),
+        ev(1.5, 7900, 4178, "node", "MPROTECT", "addr=0x7f0000 prot=rwx suppressed=0"),
+    ]
+    assert "code_injection_rwx" in fired(Engine(), events)

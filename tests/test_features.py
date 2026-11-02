@@ -159,3 +159,12 @@ def test_rename_burst_counts_without_any_file_write():
     for i in range(40):
         p.update(ev(1.0 + i * 0.01, "RENAME", f"/tmp/lab/f{i} -> /tmp/lab/f{i}.locked"))
     assert p.destruction_burst == 40
+
+
+def test_exec_with_empty_path_forgets_the_old_exe():
+    p = ProcessState(pid=1, ppid=0, comm="su_launch", uid=1000)
+    p.update(ev(1.0, "EXEC", "/tmp/lab17/su_launch"))
+    p.update(ev(1.1, "EXEC", "", uid=0, comm="su_launch"))
+    assert p.exe is None
+    assert p.exe_name == "su_launch"
+    assert p.exec_count == 2
