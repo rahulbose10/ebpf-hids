@@ -139,12 +139,29 @@ function Incidents() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-mute">
-            <span className="h-2 w-2 rounded-full bg-signal" />
+          <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-mute">
+            <a
+              href="/api/reports/incidents.csv"
+              download
+              className="rounded border border-line px-2 py-1 normal-case tracking-normal hover:border-signal hover:text-signal"
+            >
+              Incidents CSV
+            </a>
+            <a
+              href="/api/reports/alerts.csv"
+              download
+              className="rounded border border-line px-2 py-1 normal-case tracking-normal hover:border-signal hover:text-signal"
+            >
+              Alerts CSV
+            </a>
 
-            {listPoll.error && !listPoll.data
-              ? "incidents unavailable"
-              : `${incidents.length} cases`}
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-signal" />
+
+              {listPoll.error && !listPoll.data
+                ? "incidents unavailable"
+                : `${incidents.length} cases`}
+            </span>
           </div>
         </div>
       </section>
@@ -363,6 +380,15 @@ function Incidents() {
                       Update the server-side incident state
                     </div>
                   </div>
+
+                  <a
+                    href={`/api/reports/incident/${selectedIncident.id}.html`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded border border-line px-2 py-1 text-[11px] hover:border-signal hover:text-signal"
+                  >
+                    Printable report
+                  </a>
 
                   <span
                     className={`rounded border px-2 py-1 font-mono text-[9px] uppercase ${
