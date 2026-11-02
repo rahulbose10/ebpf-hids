@@ -519,6 +519,6 @@ mass_write and privesc are not reliable on the ML, see above.
 
 UNLINK, RENAME, MPROTECT, MODULE, BIND, CHMOD and READ are not in the feature vector, so the model is blind to them. The rules see them.
 
-The model files exist only on the VM, under server/ml, and are not in git. db.py has an anomaly_scores table but nothing writes to it, so scores live in memory only.
+The model files exist only on the VM, under server/ml, and are not in git. Scores live in memory only, by design. The unused anomaly_scores table was dropped on 2026-11-02, and anomalies that matter are stored as ML-ANOM alerts when ML alerting is on.
 
 samples/events.jsonl predates the new sensor until the final re-capture.
