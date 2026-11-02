@@ -11,7 +11,8 @@ function Overview() {
   const { data: an } = usePoll(api.anomaly, 4000);
 
   const counts = health?.counts || {};
-  const events = ev?.events || [];
+  const [frozen, setFrozen] = useState(null);
+  const events = frozen ?? ev?.events ?? [];
   const alerts = al?.alerts || [];
   const anomalies = an?.anomaly_count ?? 0;
 
@@ -40,11 +41,19 @@ function Overview() {
           <header className="flex h-10 items-center justify-between border-b border-line px-4">
             <span className="eyebrow">Event tape · live kernel stream</span>
             <span className="font-mono text-[11px] text-mute">
-              ts = seconds since boot, click a row for the full text
+              {frozen
+                ? "paused while the mouse is over the tape"
+                : "ts = seconds since boot, click a row for the full text"}
             </span>
           </header>
 
-          <div className="h-[calc(100vh-318px)] min-h-[280px] overflow-y-auto py-1">
+          <div
+            className="h-[calc(100vh-318px)] min-h-[280px] overflow-y-auto py-1"
+            onMouseMove={() => {
+              if (!frozen && ev?.events) setFrozen(ev.events);
+            }}
+            onMouseLeave={() => setFrozen(null)}
+          >
             {events.length === 0 ? (
               <div className="px-4 py-6 text-center font-mono text-xs text-mute">
                 No events yet
