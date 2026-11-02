@@ -193,9 +193,22 @@ def count_users():
     return n
 
 
+KEEP_ONE_ADMIN = "(role != 'admin' OR (SELECT COUNT(*) FROM users WHERE role = 'admin') > 1)"
+
+
+def list_users():
+    conn = get_connection()
+    rows = conn.execute("SELECT username, role, created_at FROM users ORDER BY id").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def set_user_role(username, role):
     conn = get_connection()
-    changed = conn.execute("UPDATE users SET role = ? WHERE username = ?", (role, username)).rowcount > 0
+    changed = conn.execute(
+        "UPDATE users SET role = ? WHERE username = ? AND (? = 'admin' OR " + KEEP_ONE_ADMIN + ")",
+        (role, username, role)
+    ).rowcount > 0
     conn.commit()
     conn.close()
     return changed
@@ -203,7 +216,10 @@ def set_user_role(username, role):
 
 def delete_user(username):
     conn = get_connection()
-    deleted = conn.execute("DELETE FROM users WHERE username = ?", (username,)).rowcount > 0
+    deleted = conn.execute(
+        "DELETE FROM users WHERE username = ? AND " + KEEP_ONE_ADMIN,
+        (username,)
+    ).rowcount > 0
     conn.commit()
     conn.close()
     return deleted

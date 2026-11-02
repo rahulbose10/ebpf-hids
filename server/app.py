@@ -4,6 +4,7 @@ import ipaddress
 import os
 import re
 import secrets
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -46,6 +47,7 @@ def _limit(default):
 ENFORCEMENT_SETTINGS = ("enabled", "dry_run", "min_severity")
 
 HASH_RE = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
+USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,32}")
 
 
 def _check_ioc(ioc_type, value):
@@ -307,6 +309,65 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/users")
+    @auth.require_role("admin")
+    def users_list():
+        return {"users": db.list_users(), "roles": list(auth.ROLES)}
+
+    @app.route("/api/users", methods=["POST"])
+    @auth.require_role("admin")
+    def users_create():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        username = data.get("username")
+        password = data.get("password")
+        role = data.get("role", "viewer")
+        if not isinstance(username, str) or not USERNAME_RE.fullmatch(username):
+            return {"error": "username must be 1 to 32 letters, digits, dots, dashes or underscores"}, 400
+        if not isinstance(password, str) or not 8 <= len(password) <= 128:
+            return {"error": "password must be 8 to 128 characters"}, 400
+        if role not in auth.ROLES:
+            return {"error": "role must be one of: " + ", ".join(auth.ROLES)}, 400
+        if db.get_user(username) is not None:
+            return {"error": "that username is taken"}, 409
+        try:
+            auth.create_user(username, password, role)
+        except sqlite3.IntegrityError:
+            return {"error": "that username is taken"}, 409
+        print(f"users: {auth.current_user()['username']} created {username} as {role}", file=sys.stderr)
+        return {"username": username, "role": role}, 201
+
+    @app.route("/api/users/<username>", methods=["DELETE"])
+    @auth.require_role("admin")
+    def users_delete(username):
+        who = auth.current_user()["username"]
+        if db.get_user(username) is None:
+            return {"error": "unknown user"}, 404
+        if username == who:
+            return {"error": "you cannot delete your own account"}, 409
+        if not db.delete_user(username):
+            return {"error": "that is the last admin, keep at least one"}, 409
+        print(f"users: {who} deleted {username}", file=sys.stderr)
+        return {"deleted": username}
+
+    @app.route("/api/users/<username>/role", methods=["POST"])
+    @auth.require_role("admin")
+    def users_role(username):
+        who = auth.current_user()["username"]
+        data = request.get_json(silent=True)
+        role = data.get("role") if isinstance(data, dict) else None
+        if role not in auth.ROLES:
+            return {"error": "role must be one of: " + ", ".join(auth.ROLES)}, 400
+        if db.get_user(username) is None:
+            return {"error": "unknown user"}, 404
+        if username == who:
+            return {"error": "you cannot change your own role"}, 409
+        if not db.set_user_role(username, role):
+            return {"error": "that is the last admin, keep at least one"}, 409
+        print(f"users: {who} set {username} to {role}", file=sys.stderr)
+        return {"username": username, "role": role}
 
     @app.route("/api/iocs")
     @auth.login_required
