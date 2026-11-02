@@ -16,7 +16,7 @@ from flask import Flask, Response, request, send_from_directory
 from werkzeug.security import safe_join
 
 from server import alerting, auth, config, db, mitre, navigator, reports, response
-from server.engine import Engine
+from server.engine import MAX_DEPTH, Engine
 from server.incidents import TRANSITIONS, IncidentManager
 from server.ioc import IOC_TYPES, IOCStore
 from server.pipeline import Pipeline
@@ -103,6 +103,45 @@ def _alerting_state(notifier):
         "note": "changes made here last until the server restarts",
     })
     return state
+
+
+def _process_chain(engine, pid):
+    with engine.lock:
+        if pid not in engine.processes:
+            return None
+        return [engine.processes[p].to_dict(engine.depth(p)) for p in engine.lineage(pid)]
+
+
+def _process_tree(engine, root):
+    with engine.lock:
+        if root not in engine.processes:
+            return None
+        children = {}
+        for state in engine.processes.values():
+            children.setdefault(state.ppid, []).append(state.pid)
+        seen = {root}
+        count = 1
+        truncated = False
+
+        def build(pid, level):
+            nonlocal count, truncated
+            node = {"process": engine.processes[pid].to_dict(engine.depth(pid)), "children": []}
+            if level >= MAX_DEPTH:
+                truncated = truncated or bool(children.get(pid))
+                return node
+            for child in sorted(children.get(pid, [])):
+                if child in seen:
+                    continue
+                if count >= config.TREE_MAX_NODES:
+                    truncated = True
+                    break
+                seen.add(child)
+                count += 1
+                node["children"].append(build(child, level + 1))
+            return node
+
+        tree = build(root, 0)
+    return {"root": root, "nodes": count, "truncated": truncated, "tree": tree}
 
 
 REPORT_PAGE_HEADERS = {
@@ -380,6 +419,22 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/lineage/<int:pid>")
+    @auth.login_required
+    def lineage(pid):
+        chain = _process_chain(engine, pid)
+        if chain is None:
+            return {"error": "unknown process"}, 404
+        return {"pid": pid, "chain": chain}
+
+    @app.route("/api/tree/<int:root>")
+    @auth.login_required
+    def process_tree(root):
+        result = _process_tree(engine, root)
+        if result is None:
+            return {"error": "unknown process"}, 404
+        return result
 
     @app.route("/api/alerting")
     @auth.require_role("admin")
