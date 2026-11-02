@@ -10,7 +10,7 @@ from datetime import timedelta
 from flask import Flask, request, send_from_directory
 from werkzeug.security import safe_join
 
-from server import auth, config, db, mitre
+from server import auth, config, db, mitre, response
 from server.engine import Engine
 from server.incidents import TRANSITIONS, IncidentManager
 from server.ioc import IOCStore
@@ -39,6 +39,28 @@ def _seed_admin():
 def _limit(default):
     value = request.args.get("limit", default, type=int)
     return max(1, min(value, config.MAX_LIMIT))
+
+
+ENFORCEMENT_SETTINGS = ("enabled", "dry_run", "min_severity")
+
+
+def _enforcement_state():
+    actions = response.recent_actions(config.RESPONSE_LOG_MAX)
+    counts = {decision: 0 for decision in response.DECISIONS}
+    for item in actions:
+        counts[item["decision"]] += 1
+    return {
+        "enabled": config.RESPONSE_ENABLED,
+        "dry_run": config.RESPONSE_DRY_RUN,
+        "min_severity": config.RESPONSE_MIN_SEVERITY,
+        "severities": list(response.SEVERITY_ORDER),
+        "grace_seconds": config.RESPONSE_GRACE_SECONDS,
+        "min_safe_pid": config.MIN_SAFE_PID,
+        "never_kill": sorted(config.NEVER_KILL),
+        "note": "changes made here last until the server restarts, then it is off and in dry-run again",
+        "counts": counts,
+        "actions": actions[:_limit(100)],
+    }
 
 
 def _load_iocs():
@@ -260,6 +282,56 @@ def create_app(start_ingest=True, source=None, mode="sensor", anomaly_model=None
         if not db.delete_api_key(key_id):
             return {"error": "unknown api key"}, 404
         return {"deleted": key_id}
+
+    @app.route("/api/enforcement")
+    @auth.login_required
+    def enforcement():
+        return _enforcement_state()
+
+    @app.route("/api/enforcement", methods=["POST"])
+    @auth.require_role("admin")
+    def enforcement_settings():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data:
+            return {"error": "send at least one of: " + ", ".join(ENFORCEMENT_SETTINGS)}, 400
+        unknown = sorted(set(data) - set(ENFORCEMENT_SETTINGS))
+        if unknown:
+            return {"error": "unknown setting: " + ", ".join(unknown)}, 400
+        for key in ("enabled", "dry_run"):
+            if key in data and not isinstance(data[key], bool):
+                return {"error": key + " must be true or false"}, 400
+        if "min_severity" in data and data["min_severity"] not in response.SEVERITY_ORDER:
+            return {"error": "min_severity must be one of: " + ", ".join(response.SEVERITY_ORDER)}, 400
+        if "enabled" in data:
+            config.RESPONSE_ENABLED = data["enabled"]
+        if "dry_run" in data:
+            config.RESPONSE_DRY_RUN = data["dry_run"]
+        if "min_severity" in data:
+            config.RESPONSE_MIN_SEVERITY = data["min_severity"]
+        changes = ", ".join(f"{key}={data[key]}" for key in sorted(data))
+        print(f"enforcement: {auth.current_user()['username']} set {changes}", file=sys.stderr)
+        return _enforcement_state()
+
+    @app.route("/api/enforcement/action", methods=["POST"])
+    @auth.require_role("analyst")
+    def enforcement_action():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        pid = data.get("pid")
+        comm = data.get("comm")
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+            return {"error": "pid must be a positive whole number"}, 400
+        if comm is not None and (not isinstance(comm, str) or len(comm) > 64):
+            return {"error": "comm must be text of at most 64 characters"}, 400
+        return response.manual_request(pid, comm, auth.current_user()["username"])
+
+    @app.route("/api/enforcement/clear", methods=["POST"])
+    @auth.require_role("admin")
+    def enforcement_clear():
+        cleared = response.clear_actions()
+        print(f"enforcement: {auth.current_user()['username']} cleared {cleared} log entries", file=sys.stderr)
+        return {"cleared": cleared}
 
     if config.CONSOLE_DIST.is_dir():
         @app.route("/", defaults={"path": ""})
