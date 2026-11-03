@@ -127,7 +127,7 @@ The 31 July 2026 dates on this entry and the three after it are the original aut
 - Extended ProcessState with 6 new counters (unlink, rename, mprotect_exec, module,
   bind, chmod) and a destruction_times list, capped at 256 like other tracked lists.
 - Added destruction_burst property: counts how many destruction events happened within
-  5s of the most recent one (sliding window, same idea as Person 3's burst_rate).
+  5s of the most recent one (sliding window, same idea as L3's burst_rate).
 - ransomware_burst (T1486) rule: evt.type in [UNLINK,RENAME] AND destruction_burst >= 8.
 - Positive test: 9 deletes in 4.5s -> 1 alert (fired once burst threshold hit, dedupe
   suppressed the rest). Negative test: 9 deletes 10s apart -> 0 alerts, since no 5s
@@ -251,7 +251,7 @@ The 31 July 2026 dates on this entry and the three after it are the original aut
   stays independently testable with zero dependencies on any of them, exactly as it
   has been tested throughout this whole project (bare Engine() calls, no database,
   no incident manager needed).
-- THIS COMPLETES ALL 24 STEPS OF THE DETECTION ENGINE (Person 2's full scope per the
+- THIS COMPLETES ALL 24 STEPS OF THE DETECTION ENGINE (L2's full scope per the
   spec): 14 rules across 9 MITRE techniques, dedupe, ML seam, incidents with
   audit trail, IOC matching, and MITRE coverage tracking - all built, tested, and
   measured (precision/recall/F1 = 1.000/1.000/1.000).
