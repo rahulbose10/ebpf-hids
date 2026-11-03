@@ -2,7 +2,7 @@
 
 The order I run the viva demo in, on the Ubuntu VM, from main after l5-console is merged. Every step was seen working on the VM on 2026-11-02 or 2026-11-03 unless the step says otherwise. If the sensor will not load on the day, skip to "Fallback without the sensor" at the bottom.
 
-Three windows open before starting: terminal 1 for the sensor and server, terminal 2 for helpers, Firefox.
+Four windows open before starting: terminal 1 for the sensor and server, terminal 2 for helpers, terminal 3 for the IPS, Firefox.
 
 ## Before the viva
 
@@ -12,15 +12,18 @@ Once, an hour before, not in front of anyone.
 cd ~/ebpf-hids
 git checkout main
 git pull origin main
+make
+make ips
+cat /sys/kernel/security/lsm
 source .venv/bin/activate
 python3 -m pytest -q
 export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"
 cd console && npm ci && npm run build && cd ..
 ```
 
-pytest gave 325 passed on 2026-11-03. The console is served from console/dist, which is not in git, so it has to be built on this machine after every pull or Flask serves an old build.
+make and make ips rebuild the sensor and the IPS when the pull changed their source and do nothing otherwise. The lsm line has to contain bpf, or step 7 will not work. pytest gave 325 passed on 2026-11-03. The console is served from console/dist, which is not in git, so it has to be built on this machine after every pull or Flask serves an old build.
 
-Write the webhook receiver for step 8 to /tmp. It prints every POST it gets and nothing else.
+Write the webhook receiver for step 9 to /tmp. It prints every POST it gets and nothing else.
 
 ```sh
 cat > /tmp/hook.py <<'EOF'
@@ -75,7 +78,7 @@ Attack Range, Run simulation on Ransomware burst. Terminal 1 prints `simulation 
 What each button raised on 2026-11-03, one click each, ML alerting off:
 
 | Button | Rules |
-| --- | --- |
+|-|-|
 | Reverse shell shape | connect_after_exec, network_parent_shell |
 | Privilege escalation | ptrace_then_exec, suid_shell |
 | Benign exec chain | nothing, it is the control case |
@@ -111,7 +114,49 @@ Enforcement page: Active response on, Dry run stays on. Under Act on one process
 
 Say: dry run decides and logs but sends no signal. A real kill needs active response on and dry run off, and then it is SIGTERM, then SIGKILL after the grace period. The guards run first: nothing below pid 300, nothing on the never-kill list, nothing in the server's own process tree. Settings last until the server restarts.
 
-## 7. Roles
+## 7. Prevention in the kernel (IPS)
+
+Terminal 3:
+
+```sh
+cd ~/ebpf-hids
+cp /bin/true /tmp/hids_blocked
+sleep 1800 &
+echo $! > /tmp/hids_ips_pid
+sudo ./loader/ips_enforce $(cat /tmp/hids_ips_pid) /tmp/hids_blocked
+```
+
+It prints `IPS ACTIVE` twice, once for ptrace against the sleep's pid and once for exec of /tmp/hids_blocked, then waits.
+
+Terminal 2:
+
+```sh
+P=$(cat /tmp/hids_ips_pid)
+sudo strace -p $P
+/tmp/hids_blocked; echo "exit code $?"
+/bin/true; echo "exit code $?"
+```
+
+strace as root ends with `attach: ptrace(PTRACE_SEIZE, <pid>): Operation not permitted`. /tmp/hids_blocked gives `Operation not permitted` and exit code 126. /bin/true, the same program under its own name, gives exit code 0. Terminal 3 prints one `"action":"BLOCK"` line for each of the two denials, stamped with kernel time like the sensor's events.
+
+strace's message also talks about yama and ptrace_scope. That is the hint strace prints for every refused attach. Root gets past yama, and the BLOCK line in terminal 3 at the same moment shows who refused.
+
+Ctrl+C in terminal 3 prints `IPS disabled.` Then terminal 2:
+
+```sh
+/tmp/hids_blocked; echo "exit code $?"
+sudo timeout 2 strace -p $P
+kill $P
+rm /tmp/hids_blocked /tmp/hids_ips_pid
+```
+
+Exit code 0, and strace attaches and lets go after 2 seconds. So it was the IPS and nothing else.
+
+Say: the sensor only watches, this is the part that says no. It is a separate program on two BPF-LSM hooks, ptrace_access_check and bprm_check_security, and it is off unless someone starts it. It refuses before the action happens, where the responder in step 6 can only kill a process afterwards. Root does not get around it: the kernel asks every security module in the lsm list, any one of them can refuse, and the bpf program does not care who is asking. The exec block matches the file's device and inode, so ./hids_blocked or a hard link is caught but a copy is not. The policy is one pid and one file on purpose. Prevention that is wrong breaks real work, so it stays narrow and off by default.
+
+If BLOCK lines from ps or gnome-shell show up: reading another process's details in /proc goes through the same ptrace permission check, so the IPS refuses that too for the protected pid. Harmless, the process still shows in ps. Not seen in the test run on 2026-11-03.
+
+## 8. Roles
 
 Settings, add a user with role viewer. Log out, log in as that user. Rule toggles and the Run simulation buttons are greyed out. Log back in as admin.
 
@@ -119,7 +164,7 @@ Say: greying out is only convenience. The server checks the role on every route 
 
 The 403 itself was not shown live, only through the tests.
 
-## 8. Webhook alerting
+## 9. Webhook alerting
 
 Terminal 2:
 
@@ -133,7 +178,7 @@ Then click Backdoor listener or any button whose rule has not fired in the last 
 
 Ctrl+C in terminal 2 when done.
 
-## 9. Stop
+## 10. Stop
 
 Ctrl+C in terminal 1. The server prints its ingest: line with the event and alert counts.
 
@@ -162,6 +207,6 @@ TODO: this was run on a dev copy, not yet on the VM. Run it once during rehearsa
 ## Rehearsal log
 
 | Date | Run | What went wrong | Fixed |
-| --- | --- | --- | --- |
+|-|-|-|-|
 | TODO | full run with sensor | | |
 | TODO | fallback | | |
