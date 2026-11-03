@@ -4,7 +4,7 @@ The SOC console for the eBPF-HIDS project: a React single page app that reads th
 
 ## Credit
 
-The console was built by Anit Chakraborty (React, Vite, Tailwind, Recharts, 13 views and a login page). Rahul Bose imported it into this repository, restyled it to a compact layout, and fixed places where it did not match the API contract or showed invented data as real. `git log -- console/` shows who wrote what.
+The console was built by Anit Chakraborty (React, Vite, Tailwind, Recharts, 13 views and a login page). Rahul Bose imported it into this repository, restyled it to a compact layout, wired the last views to the API and fixed places where it did not match the API contract or showed invented data as real. `git log -- console/` shows who wrote what.
 
 ## Run it
 
@@ -18,6 +18,8 @@ npm run dev
 
 Open http://localhost:5173. In dev mode Vite forwards every request that starts with /api to http://127.0.0.1:5000, so the backend has to listen on that address. Without a backend the top bar says "backend unreachable" and most pages show an error or an empty state. That is the intended behaviour.
 
+For the demo there is no dev server. `npm run build` writes console/dist and the Flask server serves it at http://127.0.0.1:5000. dist is not in git, so build again on the machine after every pull, or Flask serves the old build.
+
 Other commands:
 
 ```
@@ -28,61 +30,67 @@ npm run preview   serve the built files
 
 Use `npm ci`, not `npm install`. It installs exactly what package-lock.json says. Never copy node_modules between Windows and Linux.
 
-## Login
+## Login and roles
 
-The login page posts to /api/login and the server sets a session cookie. On load the console asks /api/me whether that cookie is still good. Any 401 from the API sends you back to the login page. Sign out calls /api/logout. The console only shows the login form; the server is what refuses requests.
+The login page posts to /api/login and the server sets a session cookie. On load the console asks /api/me who is signed in and with which role. Any 401 from the API sends you back to the login page. Sign out calls /api/logout.
+
+Roles are viewer, analyst and admin. Buttons that need a higher role than yours are greyed out, but that is only so nobody clicks something that will fail. The server checks the role on every route and answers 403, and tests/test_endpoints.py calls every route as anonymous, viewer, analyst and admin.
 
 ## What each view reads
 
-| View | Reads | State |
+| View | Reads | Notes |
 |-|-|-|
-| Overview | /api/health, /api/events, /api/alerts, /api/anomaly | live |
-| Detection | /api/health, /api/alerts, /api/anomaly | live |
-| Processes | /api/processes | live |
-| Process Graph | /api/processes, /api/alerts | live |
-| Analytics | /api/health, /api/alerts | live, counts the latest 300 alerts only |
-| Evaluation | /api/health, /api/alerts, /api/anomaly | live |
-| Rules | /api/rules | live; if it fails, shows a copy of server/rules/*.yml with unknown state |
-| ATT&CK Map | /api/mitre | live |
-| Attack Range | POST /api/sim/&lt;id&gt; | ids not checked against the server whitelist |
-| Incidents | /api/incidents, /api/incidents/&lt;id&gt; | live |
-| Threat Intel | mock.js | browser only, nothing is sent |
-| Enforcement | none | browser only, audit log empty |
-| Settings | none | browser only |
+| Overview | /api/health, /api/events, /api/alerts, /api/anomaly | the event tape stops while the mouse is over it, click a row for the full detail |
+| Detection | /api/health, /api/alerts, /api/anomaly | |
+| Processes | /api/processes | |
+| Process Graph | /api/processes, /api/alerts | |
+| Analytics | /api/health, /api/alerts | counts the latest 300 alerts only, the server sends no more |
+| Evaluation | /api/health, /api/anomaly, /api/evaluation | |
+| Rules | /api/rules, POST /api/rules/&lt;id&gt;/toggle | if /api/rules fails, shows a copy of server/rules/*.yml with unknown state |
+| ATT&CK Map | /api/mitre, /api/navigator/download | |
+| Attack Range | POST /api/sim/&lt;name&gt; | the server only starts names on its whitelist |
+| Incidents | /api/incidents, /api/incidents/&lt;id&gt;, /api/reports/* | |
+| Threat Intel | /api/iocs | |
+| Enforcement | /api/enforcement, /api/enforcement/action, /api/enforcement/clear | |
+| Settings | /api/users, /api/apikeys, /api/alerting | |
 
-Pages that only keep state in the browser say so in an amber bar at the top.
+Enforcement and alerting settings live in the server's memory and last until it restarts.
 
 ## Things to know
 
-The sensor timestamp `ts` is kernel time in seconds since boot. The console shows it as it is and never turns it into a wall-clock time. The top bar clock is the browser's clock.
+Two clocks. Events, alerts, incidents and anomaly rows carry the sensor's `ts`, kernel time in seconds since boot, and the console shows it with formatKts without ever turning it into a wall-clock time. Enforcement decisions, IOCs, users, API keys and alert deliveries are stamped by the server with wall-clock time and shown with formatWallTime. The top bar clock is the browser's clock.
 
-The Rules cards take their on and where lines from a copy of the rule files inside Rules.jsx, because /api/rules does not send conditions. The copy is generated from server/rules/*.yml at main 1f3506c. If a rule file changes, the copy is out of date until it is regenerated.
+The Rules cards take their on and where lines from a copy of the rule files inside Rules.jsx, because /api/rules does not send conditions. The copy was generated from server/rules/*.yml at main 50d91d3, and no rule file has changed since. If one changes, the copy is out of date until it is regenerated.
 
 The three-state ML light reads ml_alerting, not ml_ready. Loaded but not allowed to alert shows as "gauge only".
 
-The Detection gauge is the latest autoencoder reconstruction error divided by ae_threshold from /api/anomaly. The bar runs from 0 to twice the threshold, the outlined block is the threshold, and the filled part turns red when that score row is flagged, whichever check flagged it. A model without an autoencoder leaves the bar empty and says so.
+The Detection gauge is the autoencoder reconstruction error of the latest scored row divided by ae_threshold. The bar runs from 0 to twice the threshold and turns red only when the autoencoder flagged that row. A row can also be flagged by the isolation forest or by the feature limits, so the two cards under the bar say which check fired. The second card keeps the newest flagged row seen since the page opened, because /api/anomaly only returns the last 300 scores and on a busy host a flagged row leaves that window within seconds.
+
+The "Raised on the VM" lists on Attack Range are fixed text, measured by clicking each button once on 2026-11-03 with ML alerting off. The page does not ask the server what fired.
+
+## Checked
+
+On the Ubuntu VM at 2cd5f7f: `npm run lint` clean, `npm run build` 988 ms, `python3 -m pytest` 325 passed.
+
+Live with the sensor on 2026-11-03: every Attack Range button raised the rules listed on that page and Benign exec chain raised none, the Enforcement page refused to act on the server's own pid (guard_blocked, "guard: that is the responder itself"), and the layer from Download layer JSON opened on mitre-attack.github.io with the alerted techniques coloured.
 
 ## What is not done
 
-- Threat Intel, Enforcement and Settings need /api/iocs, /api/enforcement, /api/users, /api/apikeys and /api/alerting, which are not wired.
-- AttackMap.jsx still accepts several guessed shapes for /api/mitre. The real one is {techniques:[...]}, so the other branches can go.
-- Download layer JSON calls /api/navigator/download, which L4 has not built yet.
-- Attack Range sends ids like reverse-shell. The server accepts only names on its own whitelist, and the simulation scripts are not written.
-- Rules.jsx uses plain fetch, not api.jsx, so a 401 there shows the YAML copy instead of sending you to the login page. Another poll catches it within a few seconds.
-- There are no tests.
-- Checked against the real L4 backend replaying samples/events.jsonl, not yet against the live sensor.
-- npm audit reports 6 findings, all in build and dev tools. `npm audit --omit=dev` reports none.
+- There are no tests for the React code. Lint and build are the only checks. tests/test_simulation_scripts.py covers the simulation scripts behind Attack Range.
+- A row flagged by the isolation forest alone has not been seen on the Detection page live, only autoencoder flags.
+- Only the test alert was watched arriving at a webhook from this side. A real alert delivered by webhook was seen in L4's own run.
+- The replay fallback in docs/DEMO_SCRIPT.md has not been run on the VM yet.
+- `npm audit` reports 12 vulnerabilities (7 moderate, 5 high), all in build and dev tools. `npm audit --omit=dev`, which checks only what ships to the browser, reports 0. Measured on the VM on 2026-11-03, not fixed.
 
 ## Layout
 
 ```
 src/App.jsx          shell, sidebar, view switch
 src/api.jsx          fetch helper, api object, usePoll
-src/format.js        formatKts, kernel time formatting
-src/components/      Sidebar, Topbar, StatCard, SeverityChip, GaugeBar, Panel
-src/pages/           one file per view
+src/format.js        formatKts, formatWallTime, formatEvent
+src/components/      Sidebar, Topbar, StatCard, SeverityChip, SeverityChart, GaugeBar, Panel
+src/pages/           one file per view, plus Login
 src/styles/          css for the shell, cards, sidebar, top bar, login
-src/mock.js          demo data for Threat Intel
 ```
 
 usePoll(fn, ms) calls fn at once, then every ms milliseconds, and returns `{data, error, refresh}`. Polling is used instead of websockets because the data is a few JSON documents every few seconds.
