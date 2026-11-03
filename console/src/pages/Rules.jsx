@@ -1,17 +1,13 @@
 import { useMemo, useState } from "react";
-import { usePoll } from "../api";
+import { api, roleAtLeast, usePoll, useSession } from "../api";
 
-// Same-origin path. Vite proxies /api to the backend in dev, so no host or
-// port is hardcoded and the page also works when served from another machine.
-const API_BASE = "/api";
-
-// A copy of L2's rule files (server/rules/*.yml on main at 1f3506c), generated
+// A copy of L2's rule files (server/rules/*.yml on main at 50d91d3), generated
 // by reading the YAML, not typed by hand. It does two jobs: it supplies the
 // "on" and "where" lines on each card, because the /api/rules contract has no
 // condition field, and it is the fallback list when /api/rules does not answer.
 // If L2 changes a rule file, regenerate this copy, or the card shows an old
 // condition.
-const RULES_SOURCE = "server/rules/*.yml @ main 1f3506c";
+const RULES_SOURCE = "server/rules/*.yml @ main 50d91d3";
 
 const RULE_SNAPSHOT = [
   {
@@ -38,7 +34,7 @@ const RULE_SNAPSHOT = [
       {
         "field": "proc.exe",
         "op": "not_matches",
-        "value": "^(/usr)?/s?bin/(curl|wget|ping|ping6|git|ssh|scp|sftp|rsync|apt|apt-get|snap|dig|host|nslookup)$|^/usr/lib/(apt/methods|git-core)/|^/snap/|^/usr/lib/snapd/|^/usr/lib/(thunderbird|firefox)/"
+        "value": "^(/usr)?/s?bin/(curl|wget|ping|ping6|git|ssh|scp|sftp|rsync|apt|apt-get|snap|dig|host|nslookup|whoopsie)$|^/usr/lib/(apt/methods|git-core)/|^/snap/|^/usr/lib/snapd/|^/usr/lib/(thunderbird|firefox)/"
       }
     ]
   },
@@ -194,6 +190,11 @@ const RULE_SNAPSHOT = [
           "Xorg",
           "cupsd"
         ]
+      },
+      {
+        "field": "proc.exe",
+        "op": "not_matches",
+        "value": "^/usr/bin/su$"
       }
     ]
   },
@@ -234,17 +235,20 @@ const RULE_SNAPSHOT = [
     "id": "credential_access",
     "technique": "T1003",
     "severity": "high",
-    "description": "Write-intent open of /etc/shadow, /etc/gshadow or an SSH private key (reads are not visible to the sensor)",
+    "description": "Open or read of /etc/shadow, /etc/gshadow, /etc/sudoers or an SSH private key by anything except sudo, su, cron, the gdm session worker and the account tools",
     "where": [
       {
         "field": "evt.type",
-        "op": "eq",
-        "value": "OPEN"
+        "op": "in_set",
+        "value": [
+          "OPEN",
+          "READ"
+        ]
       },
       {
         "field": "evt.detail",
         "op": "matches",
-        "value": "^(/etc/(shadow|gshadow)|/(root|home/[^/]+)/\\.ssh/id_[^/.]+)$"
+        "value": "^(/etc/(shadow|gshadow|sudoers)|/(root|home/[^/]+)/\\.ssh/id_[^/.]+)$"
       },
       {
         "field": "proc.exe_name",
@@ -259,6 +263,16 @@ const RULE_SNAPSHOT = [
           "vipw",
           "ssh-keygen"
         ]
+      },
+      {
+        "field": "proc.exe",
+        "op": "not_matches",
+        "value": "^/usr/bin/(sudo|su)$|^/usr/libexec/gdm-session-worker$"
+      },
+      {
+        "field": "proc.exe_path",
+        "op": "not_matches",
+        "value": "^(cron|/usr/sbin/cron)$"
       }
     ]
   },
@@ -324,6 +338,11 @@ const RULE_SNAPSHOT = [
         "field": "evt.detail",
         "op": "matches",
         "value": "prot=[r-]wx"
+      },
+      {
+        "field": "proc.exe",
+        "op": "not_matches",
+        "value": "^/usr/lib/libreoffice/program/soffice\\.bin$|^(/usr(/local)?/bin|/home/[^/]+/\\.nvm/versions/node/[^/]+/bin)/node$"
       }
     ]
   },
@@ -443,7 +462,7 @@ function getRuleTitle(rule) {
     ransomware_burst: "Burst of deletes and renames",
     log_tampering: "Write or delete under /var/log",
     persistence_autostart: "Write to an autostart location",
-    credential_access: "Write-intent open of a credential file",
+    credential_access: "Open or read of a credential file",
     suid_backdoor: "setuid or setgid bit set by chmod",
     world_writable_sensitive: "File under /etc made world-writable",
     code_injection_rwx: "Writable and executable memory",
@@ -463,7 +482,7 @@ function getRuleDescription(rule) {
   );
 }
 
-function RuleCard({ rule, onToggle, busy }) {
+function RuleCard({ rule, onToggle, busy, locked }) {
   const severity = String(rule.severity || "low").toLowerCase();
   const eventType = getEventType(rule);
   const conditions = getRuleCondition(rule);
@@ -485,7 +504,8 @@ function RuleCard({ rule, onToggle, busy }) {
           type="button"
           className={`rule-toggle ${rule.enabled ? "enabled" : ""}`}
           onClick={() => onToggle(rule)}
-          disabled={busy || rule.enabled === null}
+          disabled={busy || locked || rule.enabled === null}
+          title={locked ? "Turning a rule on or off needs the analyst role" : undefined}
           aria-label={`${rule.enabled ? "Disable" : "Enable"} ${rule.id}`}
         >
           <span className="rule-toggle-knob" />
@@ -541,16 +561,10 @@ function RuleCard({ rule, onToggle, busy }) {
   );
 }
 
-async function fetchRules() {
-  const response = await fetch(`${API_BASE}/rules`);
-  if (!response.ok) {
-    throw new Error(`Rules request failed: ${response.status}`);
-  }
-  return response.json();
-}
-
 export default function Rules() {
-  const rulesPoll = usePoll(fetchRules, 5000);
+  const rulesPoll = usePoll(api.rules, 5000);
+  const me = useSession();
+  const canToggle = roleAtLeast(me?.role, "analyst");
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState("");
 
@@ -571,18 +585,11 @@ export default function Rules() {
     setActionError("");
 
     try {
-      const response = await fetch(`${API_BASE}/rules/${encodeURIComponent(rule.id)}/toggle`, {
-        method: "POST",
-      });
-
-      if (!response.ok) {
-        throw new Error(`Toggle failed: ${response.status}`);
-      }
-
+      await api.toggleRule(rule.id);
       await rulesPoll.refresh();
     } catch (error) {
       // Do not swap the list for sample data here. Report the failure instead.
-      setActionError(`Could not toggle ${rule.id}: ${error.message}`);
+      setActionError(`Could not toggle ${rule.id}: ${error.error || "request failed"}`);
     } finally {
       setBusyId(null);
     }
@@ -1051,6 +1058,12 @@ export default function Rules() {
         not send conditions.
       </p>
 
+      {!canToggle && !demo && (
+        <p className="rules-source">
+          Signed in as {me?.role ?? "unknown role"}. Turning a rule on or off needs the analyst role.
+        </p>
+      )}
+
       {actionError && <div className="rule-error">{actionError}</div>}
 
       {errors.length > 0 && (
@@ -1083,6 +1096,7 @@ export default function Rules() {
                   rule={rule}
                   onToggle={handleToggle}
                   busy={busyId === rule.id}
+                  locked={!canToggle}
                 />
               ))}
             </div>

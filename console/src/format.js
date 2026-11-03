@@ -7,3 +7,8 @@ export function formatEvent(event) {
   if (typeof event !== "object") return String(event);
   return [event.type, event.detail].filter(Boolean).join(" ") || "-";
 }
+
+export function formatWallTime(ts) {
+  if (typeof ts !== "number") return "-";
+  return new Date(ts * 1000).toLocaleString([], { hour12: false });
+}

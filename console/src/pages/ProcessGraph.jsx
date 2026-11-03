@@ -19,8 +19,6 @@ const SEVERITY_COLOR = {
 
 const SEVERITY_ORDER = { critical: 4, high: 3, medium: 2, low: 1 };
 
-// The stub backend sends name/user, the real process dict sends comm/uid.
-// Accept both so the page works against either until L4 replaces the stub.
 function normaliseProcess(p) {
   const hasParent = p.ppid !== undefined && p.ppid !== null && p.ppid !== "";
   return {

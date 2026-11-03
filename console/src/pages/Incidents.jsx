@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, usePoll } from "../api";
+import { api, roleAtLeast, usePoll, useSession } from "../api";
 import SeverityChip from "../components/SeverityChip";
 import { formatEvent, formatKts } from "../format";
 
@@ -41,6 +41,8 @@ const statusStyles = {
 };
 
 function Incidents() {
+  const me = useSession();
+  const canChange = roleAtLeast(me?.role, "analyst");
   const [selectedId, setSelectedId] = useState(null);
 
   const listPoll = usePoll(api.incidents, 4000);
@@ -137,12 +139,29 @@ function Incidents() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-mute">
-            <span className="h-2 w-2 rounded-full bg-signal" />
+          <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-mute">
+            <a
+              href="/api/reports/incidents.csv"
+              download
+              className="rounded border border-line px-2 py-1 normal-case tracking-normal hover:border-signal hover:text-signal"
+            >
+              Incidents CSV
+            </a>
+            <a
+              href="/api/reports/alerts.csv"
+              download
+              className="rounded border border-line px-2 py-1 normal-case tracking-normal hover:border-signal hover:text-signal"
+            >
+              Alerts CSV
+            </a>
 
-            {listPoll.error && !listPoll.data
-              ? "incidents unavailable"
-              : `${incidents.length} cases`}
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-signal" />
+
+              {listPoll.error && !listPoll.data
+                ? "incidents unavailable"
+                : `${incidents.length} cases`}
+            </span>
           </div>
         </div>
       </section>
@@ -362,6 +381,15 @@ function Incidents() {
                     </div>
                   </div>
 
+                  <a
+                    href={`/api/reports/incident/${selectedIncident.id}.html`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded border border-line px-2 py-1 text-[11px] hover:border-signal hover:text-signal"
+                  >
+                    Printable report
+                  </a>
+
                   <span
                     className={`rounded border px-2 py-1 font-mono text-[9px] uppercase ${
                       statusStyles[
@@ -388,7 +416,7 @@ function Incidents() {
                       <button
                         key={status}
                         type="button"
-                        disabled={statusUpdating}
+                        disabled={statusUpdating || !canChange}
                         onClick={() =>
                           changeStatus(status)
                         }
@@ -403,6 +431,12 @@ function Incidents() {
                     );
                   })}
                 </div>
+
+                {!canChange && (
+                  <div className="mt-2 font-mono text-[10px] text-mute">
+                    Changing the status needs the analyst role. You are signed in as {me?.role ?? "unknown role"}.
+                  </div>
+                )}
 
                 {statusMessage && (
                   <div className="mt-2 font-mono text-[10px] text-signal">

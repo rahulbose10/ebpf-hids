@@ -1,3 +1,4 @@
+import { useState } from "react";
 import StatCard from "../components/StatCard";
 import SeverityChip from "../components/SeverityChip";
 import { api, usePoll } from "../api";
@@ -10,9 +11,12 @@ function Overview() {
   const { data: an } = usePoll(api.anomaly, 4000);
 
   const counts = health?.counts || {};
-  const events = ev?.events || [];
+  const [frozen, setFrozen] = useState(null);
+  const events = frozen ?? ev?.events ?? [];
   const alerts = al?.alerts || [];
   const anomalies = an?.anomaly_count ?? 0;
+
+  const [openKey, setOpenKey] = useState(null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -37,40 +41,68 @@ function Overview() {
           <header className="flex h-10 items-center justify-between border-b border-line px-4">
             <span className="eyebrow">Event tape · live kernel stream</span>
             <span className="font-mono text-[11px] text-mute">
-              ts = seconds since boot
+              {frozen
+                ? "paused while the mouse is over the tape"
+                : "ts = seconds since boot, click a row for the full text"}
             </span>
           </header>
 
-          <div className="h-[calc(100vh-318px)] min-h-[280px] overflow-y-auto py-1">
+          <div
+            className="h-[calc(100vh-318px)] min-h-[280px] overflow-y-auto py-1"
+            onMouseMove={() => {
+              if (!frozen && ev?.events) setFrozen(ev.events);
+            }}
+            onMouseLeave={() => setFrozen(null)}
+          >
             {events.length === 0 ? (
               <div className="px-4 py-6 text-center font-mono text-xs text-mute">
                 No events yet
               </div>
             ) : (
-              events.map((event, index) => (
-                <div
-                  key={`${event.ts}-${event.pid}-${index}`}
-                  className="flex h-[22px] items-center gap-3 px-4 font-mono text-[11.5px] hover:bg-ink-700"
-                >
-                  <span className="w-[104px] shrink-0 whitespace-nowrap text-right tabular-nums text-mute">
-                    {formatKts(event.ts)}
-                  </span>
-                  <span className="w-[112px] shrink-0 truncate font-semibold text-text">
-                    {event.type || "?"}
-                  </span>
-                  <span className="min-w-0 truncate text-mute">
-                    pid {event.pid ?? "-"}
-                    <span className="mx-1.5 opacity-50">·</span>
-                    <span className="text-text/80">{event.comm || "-"}</span>
-                    {event.detail ? (
-                      <>
-                        <span className="mx-1.5 opacity-50">·</span>
-                        {event.detail}
-                      </>
-                    ) : null}
-                  </span>
-                </div>
-              ))
+              events.map((event, index) => {
+                const rowKey = `${event.ts}-${event.pid}-${event.type}`;
+                const open = openKey === rowKey;
+                const full = [event.type, `pid ${event.pid ?? "-"}`, event.comm, event.detail]
+                  .filter(Boolean)
+                  .join("  ");
+
+                return (
+                  <div
+                    key={`${rowKey}-${index}`}
+                    role="button"
+                    tabIndex={0}
+                    title={full}
+                    onClick={() => setOpenKey(open ? null : rowKey)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpenKey(open ? null : rowKey);
+                      }
+                    }}
+                    className={`flex cursor-pointer gap-3 px-4 font-mono text-[11.5px] hover:bg-ink-700 ${
+                      open ? "min-h-[22px] items-start bg-ink-700 py-1" : "h-[22px] items-center"
+                    }`}
+                  >
+                    <span className="w-[104px] shrink-0 whitespace-nowrap text-right tabular-nums text-mute">
+                      {formatKts(event.ts)}
+                    </span>
+                    <span className="w-[112px] shrink-0 truncate font-semibold text-text">
+                      {event.type || "?"}
+                    </span>
+                    <span className={`min-w-0 text-mute ${open ? "break-all" : "truncate"}`}>
+                      pid {event.pid ?? "-"}
+                      <span className="mx-1.5 opacity-50">·</span>
+                      <span className="text-text/80">{event.comm || "-"}</span>
+                      {event.detail ? (
+                        <>
+                          <span className="mx-1.5 opacity-50">·</span>
+                          {event.detail}
+                        </>
+                      ) : null}
+                    </span>
+                  </div>
+                );
+              })
             )}
           </div>
         </section>

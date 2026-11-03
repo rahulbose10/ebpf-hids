@@ -1,6 +1,6 @@
 import "../styles/topbar.css";
 import { useEffect, useState } from "react";
-import { api, usePoll } from "../api";
+import { api, usePoll, useSession } from "../api";
 
 // Works out what the two status lights should say from /api/health.
 // "tone" picks the dot colour in topbar.css, "pulse" makes the dot breathe.
@@ -40,6 +40,7 @@ function Light({ tone, pulse, text }) {
 
 function TopBar() {
   const { data, error } = usePoll(api.health, 3000);
+  const me = useSession();
   const counts = data?.counts || {};
 
   const [clock, setClock] = useState("");
@@ -73,6 +74,12 @@ function TopBar() {
 
       <div className="tb-group">
         <span className="tb-clock">{clock}</span>
+
+        {me?.user && (
+          <span className="tb-count">
+            {me.user} <strong>{me.role}</strong>
+          </span>
+        )}
 
         <span className="tb-count">
           events <strong>{counts.events ?? 0}</strong>
