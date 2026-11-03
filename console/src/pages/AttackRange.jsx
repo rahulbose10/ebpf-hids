@@ -5,63 +5,71 @@ import SeverityChip from "../components/SeverityChip";
 
 // The id is what the browser sends to POST /api/sim/<id>. L4's server checks it
 // against a hard whitelist and answers 400 for any other name. These ids must
-// match that whitelist exactly. The techniques are what each scenario is
-// expected to trigger. They are design intent, not a measured result.
+// match that whitelist exactly. The rules and techniques are what the sensor
+// raised for one run of each button on the VM, with ML alerting off.
 const simulations = [
   {
     id: "reverse-shell",
     name: "Reverse shell shape",
     techniques: ["T1059", "T1071"],
-    detail: "A loopback connection followed by a spawned shell. No remote host is contacted.",
+    fired: ["connect_after_exec", "network_parent_shell"],
+    detail: "One refused connect to 127.0.0.1 port 9, then a /bin/sh child. No remote host is contacted.",
     severity: "high",
   },
   {
     id: "privilege-escalation",
     name: "Privilege escalation",
     techniques: ["T1055", "T1548"],
-    detail: "Simulates process tracing and a privilege transition, confined to the lab.",
+    fired: ["ptrace_then_exec", "suid_shell"],
+    detail: "Attaches to its own sleep child with ptrace, asks for uid 0 (the kernel refuses), then turns itself into a shell.",
     severity: "critical",
   },
   {
     id: "benign-exec-chain",
     name: "Benign exec chain",
-    techniques: ["ML-ANOM"],
-    detail: "Nested shell activity and a temporary-file write to exercise behavioural monitoring.",
-    severity: "medium",
+    techniques: [],
+    fired: [],
+    detail: "The control case. A shell runs ls, date and cat and writes one small file under /tmp.",
+    severity: "none",
   },
   {
     id: "ransomware",
     name: "Ransomware burst",
     techniques: ["T1486"],
-    detail: "A burst of simulated file operations using temporary lab files only.",
+    fired: ["ransomware_burst"],
+    detail: "Writes 30 small files under /tmp, renames each to .locked, then deletes them. Nothing is encrypted.",
     severity: "critical",
   },
   {
     id: "rootkit",
     name: "Rootkit / module load",
     techniques: ["T1547"],
-    detail: "Simulates a kernel-threat signal. No real kernel module is installed.",
+    fired: ["kernel_module_load"],
+    detail: "Asks the kernel to load /dev/null as a module. The kernel refuses, and the sensor still reports the attempt.",
     severity: "critical",
   },
   {
     id: "persistence",
     name: "Persistence foothold",
     techniques: ["T1547"],
-    detail: "Simulates autostart-like activity within an approved temporary lab area.",
+    fired: ["persistence_autostart"],
+    detail: "Writes a marker file into ~/.config/autostart and deletes it at once. The name does not end in .desktop, so it never runs.",
     severity: "high",
   },
   {
     id: "credaccess",
     name: "Credential access",
     techniques: ["T1003"],
-    detail: "Exercises credential-access signals without collecting real credentials.",
+    fired: ["credential_access"],
+    detail: "Opens /etc/shadow read-only. The kernel refuses a normal user, and nothing is read.",
     severity: "high",
   },
   {
     id: "backdoor",
     name: "Backdoor listener",
-    techniques: ["T1071", "T1222"],
-    detail: "Listener-shaped activity on loopback plus temporary-file operations.",
+    techniques: ["T1071", "T1548"],
+    fired: ["backdoor_listener", "suid_backdoor"],
+    detail: "Listens on 127.0.0.1 port 8099 for one second, then sets the setuid bit on a copy of /bin/true under /tmp.",
     severity: "high",
   },
 ];
@@ -150,7 +158,14 @@ export default function AttackRange() {
                   ))}
                 </div>
 
-                <p className="mt-2 flex-1 text-[11px] leading-snug text-mute">{simulation.detail}</p>
+                <p className="mt-2 text-[11px] leading-snug text-mute">{simulation.detail}</p>
+
+                <div className="mt-2 flex-1">
+                  <div className="eyebrow">Raised on the VM</div>
+                  <p className="break-words font-mono text-[11px] leading-snug text-text">
+                    {simulation.fired.length ? simulation.fired.join(", ") : "nothing, as intended"}
+                  </p>
+                </div>
 
                 {result?.message && (
                   <p
@@ -180,7 +195,9 @@ export default function AttackRange() {
       <p className="mt-3 font-mono text-[10px] leading-relaxed text-mute">
         The browser sends only a scenario id to POST /api/sim/&lt;id&gt;. The server checks it against
         a whitelist, so the UI never names a script path. "Accepted" means the request was accepted,
-        not that the threat was detected. Technique tags are the expected result, not a measurement.
+        not that the threat was detected. The rules and technique tags are what the sensor raised in
+        one run of each button on the VM with ML alerting off. They are not a promise for another
+        machine.
       </p>
     </div>
   );
