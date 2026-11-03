@@ -16,8 +16,6 @@ const COLUMNS = [
   { key: "root", label: "Root", align: "left" },
 ];
 
-// The stub backend still uses name/user, the real process dict uses comm/uid.
-// Accept both so the page works against either until L4 replaces the stub.
 function commandOf(p) {
   return p.comm ?? p.name ?? "-";
 }
